@@ -1,0 +1,7 @@
+pandas
+matplotlib
+tqdm
+pyarrow
+openpyxl
+scikit-learn
+wandb
