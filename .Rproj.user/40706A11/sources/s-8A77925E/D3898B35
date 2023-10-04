@@ -1,0 +1,32 @@
+{
+    "id": "D3898B35",
+    "path": "~/GitHub/OptiverKaggle/train_distributions.Rmd",
+    "project_path": "train_distributions.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1695890951989.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "rmdVisualWrapConfigured": "true",
+        "docOutlineVisible": "0",
+        "cursorPosition": "38,45",
+        "scrollLine": "36",
+        "rmdVisualModeLocation": "861:820.7999877929688",
+        "docOutlineSize": "241",
+        "last_setup_crc32": "8A77925Ebb338d19"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1695892476,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1696272620231,
+    "read_only": false,
+    "read_only_alternatives": []
+}

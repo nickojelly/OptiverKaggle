@@ -22,9 +22,10 @@ class MockApi:
                 A call to iter_test serves all rows of all dataframes with the current group ID value.
             export_group_id_column: if true, the dataframes iter_test serves will include the group_id_column values.
         '''
-        self.input_paths: Sequence[str] =
-        self.group_id_column: str =
-        self.export_group_id_column: bool =
+        # self.input_paths: Sequence[str] = ["example_test_files/test.csv", "example_test_files/revealed_targets.csv", "example_test_files/sample_submission.csv"]
+        self.input_paths: Sequence[str] = ["example_test_files/day1_train.csv", "example_test_files/day1_train.csv", "example_test_files/sample_sub.csv"]
+        self.group_id_column: str = "time_id"
+        self.export_group_id_column: bool = False
         # iter_test is only designed to support at least two dataframes, such as test and sample_submission
         assert len(self.input_paths) >= 2
 
@@ -63,7 +64,7 @@ class MockApi:
                 print('You must call `predict()` successfully before you can continue with `iter_test()`', flush=True)
                 yield None
 
-        with open('submission.csv', 'w') as f_open:
+        with open('submission_02.csv', 'w') as f_open:
             pd.concat(self.predictions).to_csv(f_open, index=False)
         self._status = 'finished'
 
