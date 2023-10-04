@@ -40,34 +40,39 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 
             [setattr(obj, 'hidden', val.detach()) for obj, val in zip(stocks,hidden)]
 
-            [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks,output)]
+            [setattr(obj, 'hidden_all', val) for obj, val in zip(stocks,output)]
 
             stocks_hidden,targets = trading_df.fetch_daily_data(day=i)
 
             X = torch.cat(stocks_hidden,dim=-1)
+            
             Y = torch.stack(targets).transpose(0,1).to('cuda:0')
 
-            output = model(X)
+            output, relu = model(X)
+
+            
 
             loss = criterion(output,Y)
             L1_loss = reg_L1(output,Y)
 
             loss.backward()
-            loss_list.append((i,loss))
+            # loss_list.append((i,loss))
             optimizer.step()
 
             if i == 0:
                 epoch_loss = loss
                 epoch_reg_l1 = L1_loss
+                epoch_relu = relu
             else:
                 if loss.isnan():
                     pass
                 epoch_loss = loss+epoch_loss
                 epoch_reg_l1 = L1_loss+epoch_reg_l1
+                epoch_relu = relu+epoch_relu
 
             wandb.log({"loss_1": torch.mean(loss).item()})
             trading_df.detach_hidden()
-        wandb.log({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
+        wandb.log({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch, 'relu':epoch_relu.mean()})
         # print({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
         validate_model(trading_df,model,criterion,epoch)
         if epoch%10==0:
@@ -91,14 +96,17 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
     output_dict['stock'] = []
     output_dict['day'] = []
     output_dict['time'] = []
-    output_dict['id'] = []
+    # output_dict['id'] = []
     output_dict['target'] = []
     output_dict['pred'] = []
+    
 
     for i in range(0,len_val-1):
-        print(i)
+        # print(i)
         stocks = [trading_df.stocksDict[x] for x in trading_df.val_stock_batches[i]] 
-        stock_ids = trading_df.val_stock_batches[i]
+        stock_ids = list(range(0,200))
+        time_ids = list(range(0,55))
+
          
         X = trading_df.packed_val_x[i]
         Y = trading_df.packed_val_y[i].data
@@ -111,14 +119,17 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
 
         [setattr(obj, 'hidden_test', val.detach()) for obj, val in zip(stocks,hidden)]
 
-        [setattr(obj, 'hidden_out', val.detach()) for obj, val in zip(stocks,output)]
+        [setattr(obj, 'hidden_all', val.detach()) for obj, val in zip(stocks,output)]
 
         stocks_hidden,targets = trading_df.fetch_daily_data(day=i)
 
         X = torch.cat(stocks_hidden,dim=-1)
         Y = torch.stack(targets).transpose(0,1).to('cuda:0')
+        # print(X[0])
 
-        output = model(X)
+        output, relu = model(X)
+
+        # print(f"{relu.sum()=}")
 
         loss = criterion(output,Y)
         L1_loss = reg_L1(output,Y)
@@ -126,27 +137,40 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
         if i == 0:
             epoch_loss = loss
             epoch_reg_l1 = L1_loss
+            epoch_relu = relu
         else:
             if loss.isnan():
                 pass
             epoch_loss = loss+epoch_loss
             epoch_reg_l1 = L1_loss+epoch_reg_l1
+            epoch_relu = relu+epoch_relu
 
-        output_dict['stock'].append(stock_ids)
-        output_dict['day'].append([i]*55)
-        # output_dict['time'].append([[])
-        output_dict['target'].append(Y.tolist())
-        output_dict['pred'].append(output.tolist())
+        output_dict['stock'].append(stock_ids*55)
+        output_dict['day'].append([i]*55*len(stock_ids))
+        output_dict['time'].extend([[x]*len(stock_ids) for x in time_ids])
+        output_dict['target'].append(Y.flatten().tolist())
+        output_dict['pred'].append(output.flatten().tolist())
+
+        # return output, relu
+
 
 
     for k,value in output_dict.items():
-        print(k)
-        
+        # print(k)
+        # print(value)
+
         output_dict[k] = [item for sublist in value for item in sublist]
-        print(len(output_dict[k]))
+        # print(output_dict[k])
+        # print(len(output_dict[k]))
         # print(len(output_dict[k]))
 
         
-    log_dict = pd.DataFrame(data=output_dict)
-    # wandb.log({"val_epoch_loss": epoch_loss/len_val, "val_epoch_loss_l1": epoch_reg_l1/len_val,'epoch':epoch})
-    # print({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
+
+    wandb.log({"val_epoch_loss": epoch_loss/len_val, "val_epoch_loss_l1": epoch_reg_l1/len_val,'epoch':epoch, 'val_relu':epoch_relu.mean()})
+    print({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
+    if epoch % 10 == 0:
+        log_dict = pd.DataFrame(data=output_dict)
+        print(log_dict.head(10))
+        log_dict = log_dict.head(200*55)
+        log_dict = wandb.Table(data=log_dict)
+        wandb.log({'data_table':log_dict})

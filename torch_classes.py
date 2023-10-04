@@ -210,10 +210,10 @@ class GRUNetV2(nn.Module):
         self.batch_norm = nn.BatchNorm1d(input_size)
 
         self.relu0 = nn.ReLU()
-        self.fc0 = nn.Linear(hidden_size*200, 1024)        
+        self.fc0 = nn.Linear(hidden_size*200, 200)        
         self.rl1 = nn.ReLU()
         self.drop1 = nn.Dropout(dropout)
-        self.fc1 = nn.Linear(1024, 640)
+        self.fc1 = nn.Linear(1024, 200)
         self.rl2 = nn.ReLU()
         self.drop2 = nn.Dropout(dropout)
 
@@ -237,16 +237,16 @@ class GRUNetV2(nn.Module):
 
         else:
             x = x.float()
-            x = self.relu0(x)
-            x = self.fc0(x)
-            x = self.rl1(x)
-            x = self.drop1(x)
-            x = self.fc1(x)
-            x = self.rl2(x)
-            x_e = self.drop2(x)
-            x = self.fc2(x_e)
-            x_rl3 = self.rl3(x)
-            x = self.drop3(x_rl3)
-            x = self.fc3(x)
+            xr1 = self.relu0(x)
+            x = self.fc0(xr1)
+            # xr2 = self.rl1(x)
+            # x = self.drop1(xr2)
+            # x = self.fc1(x)
+            # x = self.rl2(x)
+            # x_e = self.drop2(x)
+            # x = self.fc2(x_e)
+            # x_rl3 = self.rl3(x)
+            # x = self.drop3(x_rl3)
+            # x = self.fc3(x)
 
-            return x
+            return x,xr1
