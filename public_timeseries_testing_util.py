@@ -23,7 +23,7 @@ class MockApi:
             export_group_id_column: if true, the dataframes iter_test serves will include the group_id_column values.
         '''
         # self.input_paths: Sequence[str] = ["example_test_files/test.csv", "example_test_files/revealed_targets.csv", "example_test_files/sample_submission.csv"]
-        self.input_paths: Sequence[str] = ["example_test_files/day1_train.csv", "example_test_files/train.csv", "example_test_files/sample_sub.csv"]
+        self.input_paths: Sequence[str] = ["example_test_files/val_data.csv", "example_test_files/train.csv", "example_test_files/val_data.csv"]
         self.group_id_column: str = "time_id"
         self.export_group_id_column: bool = False
         # iter_test is only designed to support at least two dataframes, such as test and sample_submission
