@@ -64,7 +64,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
         if epoch%10==0:
             trading_df.create_hidden_states_dict_v2()
             model_saver(model,optimizer,epoch,0,0,trading_df.train_hidden_dict)
-        trading_df.reset_hidden(hidden_size=config['hidden_size'])
+        trading_df.reset_hidden(hidden_size=config['hidden_size'], num_layers=config['num_layers'])
         # print(epoch_loss)
         # print(loss_list)
               
@@ -112,11 +112,11 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
             epoch_loss = loss+epoch_loss
             epoch_reg_l1 = L1_loss+epoch_reg_l1
 
-        output_dict['stock'].append()
-        output_dict['day'].append()
-        output_dict['id'].append()
-        output_dict['target'].append()
-        output_dict['pred'].append()
+        # output_dict['stock'].append()
+        # output_dict['day'].append()
+        # output_dict['id'].append()
+        # output_dict['target'].append()
+        # output_dict['pred'].append()
 
 
         

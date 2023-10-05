@@ -9,17 +9,41 @@ class TradingDays():
         pass
 
 class Stock():
-    def __init__(self, stock_id:int) -> None:
+    def __init__(self, stock_id:int,hidden_size=64,num_layers=2) -> None:
         self.stock_id = stock_id
         self.data_daily = {}
         self.target_daily = {}
-        self.hidden = torch.zeros(1,64)
-        self.hidden_test = torch.zeros(1,64)
+        self.hidden = torch.zeros(1,num_layers,hidden_size)
+        self.hidden_test = torch.zeros(1,num_layers,hidden_size)
+        self.hidden_all = torch.zeros(55,hidden_size).to('cuda:0')
 
 class TradingData():
     def __init__(self,train_data=None) -> None:
         self.mode = 'train'
-        self.stat_cols = ['seconds_in_bucket','imbalance_size','imbalance_buy_sell_flag','reference_price','matched_size','far_price','near_price','bid_price','bid_size','ask_price','ask_size','wap']
+        self.stat_cols = ['seconds_in_bucket','imbalance_size','imbalance_buy_sell_flag','reference_price','matched_size','far_price','near_price','bid_price','bid_size','ask_price','ask_size','wap','imb_s1',
+       'imb_s2', 'far_price_reference_price_imb',
+       'near_price_reference_price_imb', 'near_price_far_price_imb',
+       'ask_price_reference_price_imb', 'ask_price_far_price_imb',
+       'ask_price_near_price_imb', 'bid_price_reference_price_imb',
+       'bid_price_far_price_imb', 'bid_price_near_price_imb',
+       'bid_price_ask_price_imb', 'wap_reference_price_imb',
+       'wap_far_price_imb', 'wap_near_price_imb', 'wap_ask_price_imb',
+       'wap_bid_price_imb', 'near_price_far_price_reference_price_imb2',
+       'ask_price_far_price_reference_price_imb2',
+       'ask_price_near_price_reference_price_imb2',
+       'ask_price_near_price_far_price_imb2',
+       'bid_price_far_price_reference_price_imb2',
+       'bid_price_near_price_reference_price_imb2',
+       'bid_price_near_price_far_price_imb2',
+       'bid_price_ask_price_reference_price_imb2',
+       'bid_price_ask_price_far_price_imb2',
+       'bid_price_ask_price_near_price_imb2',
+       'wap_far_price_reference_price_imb2',
+       'wap_near_price_reference_price_imb2', 'wap_near_price_far_price_imb2',
+       'wap_ask_price_reference_price_imb2', 'wap_ask_price_far_price_imb2',
+       'wap_ask_price_near_price_imb2', 'wap_bid_price_reference_price_imb2',
+       'wap_bid_price_far_price_imb2', 'wap_bid_price_near_price_imb2',
+       'wap_bid_price_ask_price_imb2']
         self.stocksDict = {}
         self.daysDict = {}
         if isinstance(train_data,pd.DataFrame):
@@ -88,12 +112,13 @@ class TradingData():
         self.packed_val_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_batches if x]
         self.packed_val_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_class_batches if x]
 
-    def reset_hidden(self, hidden_size=32, device='cuda:0'): 
+    def reset_hidden(self, hidden_size=32,num_layers=2, device='cuda:0'): 
         if hidden_size==None:
             hidden_size = self.hidden_size
         for stock in self.stocksDict.values():
-            stock.hidden = torch.zeros(1,hidden_size).to(device)
-            stock.hidden_test = torch.zeros(1,hidden_size).to(device)
+            stock.hidden = torch.zeros(num_layers,hidden_size).to(device)
+            stock.hidden_test = torch.zeros(num_layers,hidden_size).to(device)
+            stock.hidden_all = torch.zeros(55,hidden_size).to(device)
 
     def detach_hidden(self, stocks_list=None):
         for stock in self.stocksDict.values():
