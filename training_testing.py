@@ -35,6 +35,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1)
 
             output,hidden = model(X,hidden_in,p1=True)
+            # print(hidden.shape)
             hidden = hidden.transpose(0,1)
             # output  = torch.flatten(output)
 
@@ -78,7 +79,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
         if epoch%10==0:
             trading_df.create_hidden_states_dict_v2()
             model_saver(model,optimizer,epoch,0,0,trading_df.train_hidden_dict)
-        trading_df.reset_hidden(hidden_size=config['hidden_size'])
+        trading_df.reset_hidden(hidden_size=config['hidden_size'], num_layers=config['num_layers'])
         # print(epoch_loss)
         # print(loss_list)
               

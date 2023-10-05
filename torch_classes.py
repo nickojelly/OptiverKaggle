@@ -11,13 +11,13 @@ class TradingDays():
 
 
 class Stock():
-    def __init__(self, stock_id:int) -> None:
+    def __init__(self, stock_id:int,hidden_size=64,num_layers=2) -> None:
         self.stock_id = stock_id
         self.data_daily = {}
         self.target_daily = {}
-        self.hidden = torch.zeros(1,64)
-        self.hidden_test = torch.zeros(1,64)
-        self.hidden_all = torch.zeros(55,64).to('cuda:0')
+        self.hidden = torch.zeros(1,num_layers,hidden_size)
+        self.hidden_test = torch.zeros(1,num_layers,hidden_size)
+        self.hidden_all = torch.zeros(55,hidden_size).to('cuda:0')
 
 
 class TradingData():
@@ -92,12 +92,13 @@ class TradingData():
         self.packed_val_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_batches if x]
         self.packed_val_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_class_batches if x]
 
-    def reset_hidden(self, hidden_size=32, device='cuda:0'): 
+    def reset_hidden(self, hidden_size=32,num_layers=2, device='cuda:0'): 
         if hidden_size==None:
             hidden_size = self.hidden_size
         for stock in self.stocksDict.values():
-            stock.hidden = torch.zeros(1,hidden_size).to(device)
-            stock.hidden_test = torch.zeros(1,hidden_size).to(device)
+            stock.hidden = torch.zeros(num_layers,hidden_size).to(device)
+            stock.hidden_test = torch.zeros(num_layers,hidden_size).to(device)
+            stock.hidden_all = torch.zeros(55,hidden_size).to(device)
 
     def detach_hidden(self, stocks_list=None):
         for stock in self.stocksDict.values():
@@ -208,9 +209,10 @@ class GRUNetV2(nn.Module):
         self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3)
         self.relu0 = nn.ReLU()
         self.batch_norm = nn.BatchNorm1d(input_size)
+        self.batch_norm2 = nn.LayerNorm(hidden_size*200)
 
-        self.relu0 = nn.ReLU()
-        self.fc0 = nn.Linear(hidden_size*200, 200)        
+        # self.relu0 = nn.LeakyReLU()
+        self.fc0 = nn.Linear(hidden_size*200, 1024)        
         self.rl1 = nn.ReLU()
         self.drop1 = nn.Dropout(dropout)
         self.fc1 = nn.Linear(1024, 200)
@@ -237,11 +239,12 @@ class GRUNetV2(nn.Module):
 
         else:
             x = x.float()
+            # x = self.batch_norm2(x)
             xr1 = self.relu0(x)
             x = self.fc0(xr1)
-            # xr2 = self.rl1(x)
-            # x = self.drop1(xr2)
-            # x = self.fc1(x)
+            xr2 = self.rl1(x)
+            x = self.drop1(xr2)
+            x = self.fc1(x)
             # x = self.rl2(x)
             # x_e = self.drop2(x)
             # x = self.fc2(x_e)
