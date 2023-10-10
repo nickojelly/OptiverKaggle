@@ -4,3 +4,4 @@ wandb/
 .RData
 *.pt
 *.xlsx
+*.parquet
