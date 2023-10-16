@@ -74,6 +74,7 @@ class TradingData():
 
     def add_data(self,data:pd.DataFrame):
         data['stats'] = pd.Series(data[self.stat_cols].fillna(-1).values.tolist())
+        # data['lgbm'] = pd.Series(data[self.stat_cols].fillna(-1).values.tolist())
         data_grouped_stock_id = data.groupby('stock_id')
         for stock_id,stock_data in tqdm(data_grouped_stock_id):
 
@@ -87,7 +88,8 @@ class TradingData():
                     data.drop(stock_daily_data.index, inplace=True)
                     continue
                 self.stocksDict[stock_id].data_daily[day] = [torch.tensor(x) for x in stock_daily_data['stats'].tolist()]
-                self.stocksDict[stock_id].target_daily[day] = [torch.tensor(x) for x in stock_daily_data['target'].tolist()]
+                self.stocksDict[stock_id].target_daily[day] = [torch.tensor(x, device='cuda:0') for x in stock_daily_data['target'].tolist()]
+                self.stocksDict[stock_id].lgbm_pred_daily[day] = [torch.tensor(x, device='cuda:0') for x in stock_daily_data['lgbm_preds'].tolist()]
 
         data_grouped_daily = data.groupby('date_id')
 
@@ -115,8 +117,9 @@ class TradingData():
             self.train_batches.append(train_data)
             self.train_class_batches.append(train_classes)
 
-        self.packed_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_batches if x]
-        self.packed_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_class_batches if x]
+        # return 0 
+
+
 
         self.val_batches = []
         self.val_class_batches = []
@@ -128,8 +131,13 @@ class TradingData():
             self.val_batches.append(train_data)
             self.val_class_batches.append(train_classes)
 
+
+        self.packed_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_batches if x]
+        self.packed_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_class_batches if x]
         self.packed_val_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_batches if x]
         self.packed_val_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_class_batches if x]
+
+
 
     def reset_hidden(self, hidden_size=32,num_layers=2, device='cuda:0'): 
         if hidden_size==None:
@@ -177,11 +185,15 @@ class TradingData():
 
         for i in range(0,200):
             # print(i)
-            stock_hidden.append(self.stocksDict[i].hidden_all)
+            
             try:
+                stock_lgbm = self.stocksDict[i].lgbm_pred_daily[day]
                 stock_targets.append(torch.stack(self.stocksDict[i].target_daily[day]))
             except KeyError as e:
-                stock_targets.append(torch.zeros(55))
+                stock_targets.append(torch.zeros(55,device='cuda:0'))
+                
+
+            stock_hidden.append([torch.cat((x,y.reshape(1)),0) for x,y in zip(self.stocksDict[i].hidden_all,stock_lgbm)])
 
         return stock_hidden,stock_targets
 
@@ -257,7 +269,7 @@ class GRUNetV2(nn.Module):
             self.batch_norm2 = nn.LayerNorm(hidden_size*200)
 
         # self.relu0 = nn.LeakyReLU()
-        self.fc0 = nn.Linear(hidden_size*200, 1024)        
+        self.fc0 = nn.Linear(hidden_size*200+200, 1024)        
         self.rl1 = nn.ReLU()
         self.drop1 = nn.Dropout(dropout)
         self.fc1 = nn.Linear(1024, 200)

@@ -9,6 +9,7 @@ import torch.optim as optim
 import wandb
 import torch_classes
 from model_saver import model_saver_wandb as model_saver
+import time
 
 def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNetV2, config:dict, optimizer, criterion):
     example_ct = 0
@@ -33,22 +34,37 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             Y = trading_df.packed_y[i].data
 
             hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1)
+            t1 = time.perf_counter()
 
             output,hidden = model(X,hidden_in,p1=True)
+            t2 = time.perf_counter()
+            print(f"1{t2-t1=}")
             hidden = hidden.transpose(0,1)
 
             [setattr(obj, 'hidden', val.detach()) for obj, val in zip(stocks,hidden)]
 
             [setattr(obj, 'hidden_all', val) for obj, val in zip(stocks,output)]
-
+            t1 = time.perf_counter()
             stocks_hidden,targets = trading_df.fetch_daily_data(day=i)
+            t2 = time.perf_counter()
+            print(f"2{t2-t1=}")
 
+            t1 = time.perf_counter()
+            stocks_hidden = [torch.stack(x) for x in stocks_hidden]
+            t2 = time.perf_counter()
+            print(f"3{t2-t1=}")
+
+            t1 = time.perf_counter()
             X = torch.cat(stocks_hidden,dim=-1)
             
-            Y = torch.stack(targets).transpose(0,1).to('cuda:0')
+            Y = torch.stack(targets).transpose(0,1)
 
             output, relu = model(X)
+            t2 = time.perf_counter()
+            print(f"4{t2-t1=}")
 
+            t1 = time.perf_counter()
+            # print(f"{Y.shape=},{output.shape=},{i=}")
             
 
             loss = criterion(output,Y)
@@ -56,6 +72,9 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 
             loss.backward()
             optimizer.step()
+
+            t2 = time.perf_counter()
+            print(f"5{t2-t1=}")
 
             if i == 0:
                 epoch_loss = loss
@@ -120,8 +139,10 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
 
         stocks_hidden,targets = trading_df.fetch_daily_data(day=i)
 
+        stocks_hidden = [torch.stack(x) for x in stocks_hidden]
+
         X = torch.cat(stocks_hidden,dim=-1)
-        Y = torch.stack(targets).transpose(0,1).to('cuda:0')
+        Y = torch.stack(targets).transpose(0,1)
         # print(X[0])
 
         output, relu = model(X)
