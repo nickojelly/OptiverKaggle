@@ -12,11 +12,11 @@ from model_saver import model_saver_wandb as model_saver
 
 def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNetV2, config:dict, optimizer, criterion):
     example_ct = 0
-    epochs = 10000
+    epochs = 500
     num_batches = len(trading_df.train_batches)-2
     reg_L1 = nn.L1Loss()
     model = model.to('cuda:0')
-    trading_df.reset_hidden(config['hidden_size'])
+    trading_df.reset_hidden(hidden_size=config['hidden_size'],num_layers=config['num_layers'])
     for epoch in trange(epochs):
         model.train()
         loss_list = []
@@ -35,9 +35,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1)
 
             output,hidden = model(X,hidden_in,p1=True)
-            # print(hidden.shape)
             hidden = hidden.transpose(0,1)
-            # output  = torch.flatten(output)
 
             [setattr(obj, 'hidden', val.detach()) for obj, val in zip(stocks,hidden)]
 
@@ -57,7 +55,6 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             L1_loss = reg_L1(output,Y)
 
             loss.backward()
-            # loss_list.append((i,loss))
             optimizer.step()
 
             if i == 0:
@@ -74,14 +71,13 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             wandb.log({"loss_1": torch.mean(loss).item()})
             trading_df.detach_hidden()
         wandb.log({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch, 'relu':epoch_relu.mean()})
-        # print({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
+
         validate_model(trading_df,model,criterion,epoch)
         if epoch%10==0:
             trading_df.create_hidden_states_dict_v2()
             model_saver(model,optimizer,epoch,0,0,trading_df.train_hidden_dict)
-        trading_df.reset_hidden(hidden_size=config['hidden_size'], num_layers=config['num_layers'])
-        # print(epoch_loss)
-        # print(loss_list)
+        trading_df.reset_hidden(hidden_size=config['hidden_size'],num_layers=config['num_layers'])
+
               
 
 @torch.no_grad()          
@@ -168,10 +164,14 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
         
 
     wandb.log({"val_epoch_loss": epoch_loss/len_val, "val_epoch_loss_l1": epoch_reg_l1/len_val,'epoch':epoch, 'val_relu':epoch_relu.mean()})
-    print({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
+    # print({"epoch_loss": epoch_loss/384, "epoch_l1_loss": epoch_reg_l1/384, 'epoch':epoch})
     if epoch % 10 == 0:
-        log_dict = pd.DataFrame(data=output_dict)
-        print(log_dict.head(10))
-        log_dict = log_dict.head(200*55)
-        log_dict = wandb.Table(data=log_dict)
-        wandb.log({'data_table':log_dict})
+        try:
+
+            log_dict = pd.DataFrame(data=output_dict)
+            print(log_dict.head(10))
+            log_dict = log_dict.head(200*55)
+            log_dict = wandb.Table(data=log_dict)
+            wandb.log({'data_table':log_dict})
+        except Exception as e:
+            print(e)

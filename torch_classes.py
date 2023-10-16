@@ -14,6 +14,7 @@ class Stock():
     def __init__(self, stock_id:int,hidden_size=64,num_layers=2) -> None:
         self.stock_id = stock_id
         self.data_daily = {}
+        self.lgbm_pred_daily = {}
         self.target_daily = {}
         self.hidden = torch.zeros(1,num_layers,hidden_size)
         self.hidden_test = torch.zeros(1,num_layers,hidden_size)
@@ -61,7 +62,7 @@ class TradingData():
        'far_price_ask_price_bid_price_imb2', 'far_price_ask_price_wap_imb2',
        'far_price_bid_price_wap_imb2', 'near_price_ask_price_bid_price_imb2',
        'near_price_ask_price_wap_imb2', 'near_price_bid_price_wap_imb2',
-       'ask_price_bid_price_wap_imb2', 'pca_prices']
+       'ask_price_bid_price_wap_imb2', 'pca_prices','lgbm_preds']
         self.stocksDict = {}
         self.daysDict = {}
         if isinstance(train_data,pd.DataFrame):
@@ -242,12 +243,18 @@ class GRUNet(nn.Module):
     
 class GRUNetV2(nn.Module):
 
-    def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.3, fc0_size=256,fc1_size=64,num_layers=1):
+    def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.3, fc0_size=256,fc1_size=64,num_layers=1,batch_norm=0):
         super(GRUNetV2, self).__init__()
         self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3)
         self.relu0 = nn.ReLU()
-        self.batch_norm = nn.BatchNorm1d(input_size)
-        self.batch_norm2 = nn.LayerNorm(hidden_size*200)
+
+        self.batch_norm = nn.Identity()
+        self.batch_norm2 = nn.Identity()
+
+        if batch_norm >= 1:
+            self.batch_norm = nn.BatchNorm1d(input_size)
+        if batch_norm == 2:
+            self.batch_norm2 = nn.LayerNorm(hidden_size*200)
 
         # self.relu0 = nn.LeakyReLU()
         self.fc0 = nn.Linear(hidden_size*200, 1024)        
@@ -277,7 +284,7 @@ class GRUNetV2(nn.Module):
 
         else:
             x = x.float()
-            # x = self.batch_norm2(x)
+            x = self.batch_norm2(x)
             xr1 = self.relu0(x)
             x = self.fc0(xr1)
             xr2 = self.rl1(x)
