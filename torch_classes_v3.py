@@ -151,6 +151,7 @@ class GRUNet(nn.Module):
 
 
     def forward(self, x,h=None, test=False):
+<<<<<<< Updated upstream
         
         if test:
             x = x.float()
@@ -197,6 +198,8 @@ class GRUNetV2(nn.Module):
 
 
     def forward(self, x,h=None, test=False):
+=======
+>>>>>>> Stashed changes
         if test:
             x = x.float()
             x = self.batch_norm(x.data)
