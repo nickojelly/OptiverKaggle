@@ -14,6 +14,10 @@ class Stock():
         self.data_daily = {}
         self.data_volumes = {}
         self.target_daily = {}
+        self.bid_size_daily = {}
+        self.bid_price_daily = {}
+        self.ask_size_daily = {}
+        self.ask_price_daily = {}
         self.hidden = torch.zeros(1,num_layers,hidden_size)
         self.hidden_test = torch.zeros(1,num_layers,hidden_size)
         self.hidden_all = torch.zeros(30,hidden_size).to('cuda:0')
@@ -22,45 +26,12 @@ class TradingData():
     def __init__(self,train_data=None) -> None:
         self.mode = 'train'
         self.stat_cols = ['seconds_in_bucket', 'imbalance_size',
-       'imbalance_buy_sell_flag', 'reference_price', 'matched_size',
-       'far_price', 'near_price', 'bid_price', 'bid_size', 'ask_price',
-       'ask_size', 'wap', 'overall_medvol', 'first5min_medvol',
-       'last5min_medvol', 'bid_plus_ask_sizes', 'imbalance_ratio', 'imb_s1',
-       'imb_s2', 'ask_x_size', 'bid_x_size', 'ask_minus_bid',
-       'bid_price_over_ask_price', 'reference_price_minus_far_price',
-       'reference_price_times_far_price', 'reference_price_times_near_price',
-       'reference_price_minus_ask_price', 'reference_price_times_ask_price',
-       'reference_price_ask_price_imb', 'reference_price_minus_bid_price',
-       'reference_price_times_bid_price', 'reference_price_bid_price_imb',
-       'reference_price_minus_wap', 'reference_price_times_wap',
-       'reference_price_wap_imb', 'far_price_minus_near_price',
-       'far_price_times_near_price', 'far_price_minus_ask_price',
-       'far_price_times_ask_price', 'far_price_minus_bid_price',
-       'far_price_times_bid_price', 'far_price_times_wap', 'far_price_wap_imb',
-       'near_price_minus_ask_price', 'near_price_times_ask_price',
-       'near_price_ask_price_imb', 'near_price_minus_bid_price',
-       'near_price_times_bid_price', 'near_price_bid_price_imb',
-       'near_price_minus_wap', 'near_price_wap_imb',
-       'ask_price_minus_bid_price', 'ask_price_times_bid_price',
-       'ask_price_minus_wap', 'ask_price_times_wap', 'ask_price_wap_imb',
-       'bid_price_minus_wap', 'bid_price_times_wap', 'bid_price_wap_imb',
-       'reference_price_far_price_near_price_imb2',
-       'reference_price_far_price_ask_price_imb2',
-       'reference_price_far_price_bid_price_imb2',
-       'reference_price_far_price_wap_imb2',
-       'reference_price_near_price_ask_price_imb2',
-       'reference_price_near_price_bid_price_imb2',
-       'reference_price_near_price_wap_imb2',
-       'reference_price_ask_price_bid_price_imb2',
-       'reference_price_ask_price_wap_imb2',
-       'reference_price_bid_price_wap_imb2',
-       'far_price_near_price_ask_price_imb2',
-       'far_price_near_price_bid_price_imb2', 'far_price_near_price_wap_imb2',
-       'far_price_ask_price_bid_price_imb2', 'far_price_ask_price_wap_imb2',
-       'far_price_bid_price_wap_imb2', 'near_price_ask_price_bid_price_imb2',
-       'near_price_ask_price_wap_imb2', 'near_price_bid_price_wap_imb2',
-       'ask_price_bid_price_wap_imb2', 'pca_prices','lgbm_preds']
+       'imbalance_buy_sell_flag', 'reference_price', 'matched_size',  
+    #    'far_price', 'near_price', 
+       'bid_price', 'bid_size', 'ask_price', 'ask_size', 
+        'wap', 'index_weight','wap_calc','initial_wap','wap_weighted', 'index_wap', 'index_wap_init', 'index_wap_move_to_init']
         self.stocksDict = {}
+        
         self.daysDict = {}
         if isinstance(train_data,pd.DataFrame):
             # self.data = train_data
@@ -87,6 +58,11 @@ class TradingData():
                 self.stocksDict[stock_id].data_daily[day] = [torch.tensor(x) for x in stock_daily_data['stats'].tolist()]
                 self.stocksDict[stock_id].data_volumes[day] = [torch.tensor(x) for x in stock_daily_data['volume'].tolist()]
                 self.stocksDict[stock_id].target_daily[day] = [torch.tensor(x) for x in stock_daily_data['target'].tolist()]
+                
+                self.stocksDict[stock_id].bid_size_daily[day]  = [torch.tensor(x) for x in stock_daily_data['bid_size_t-60'].tolist()]
+                self.stocksDict[stock_id].bid_price_daily[day] = [torch.tensor(x) for x in stock_daily_data['bid_price_t-60'].tolist()]
+                self.stocksDict[stock_id].ask_size_daily[day]  = [torch.tensor(x) for x in stock_daily_data['ask_size_t-60'].tolist()]
+                self.stocksDict[stock_id].ask_price_daily[day] = [torch.tensor(x) for x in stock_daily_data['ask_price_t-60'].tolist()]
 
         data_grouped_daily = data.groupby('date_id')
 
@@ -106,20 +82,46 @@ class TradingData():
         self.train_batches = []
         self.train_class_batches = []
         self.stock_batches = []
-        
+        self.train_bid_size_daily  = []
+        self.train_bid_price_daily = []
+        self.train_ask_size_daily  = []
+        self.train_ask_price_daily = []
+
+
         for i in tqdm(train_range):
             self.stock_batches.append(self.daysDict[i])
             
             train_data = [self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]
             train_classes = [self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]
+
+            bid_size_daily = [self.stocksDict[x].bid_size_daily[i] for x in self.daysDict[i]]
+            bid_price_daily = [self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]
+            ask_size_daily = [self.stocksDict[x].ask_size_daily[i] for x in self.daysDict[i]]
+            ask_price_daily = [self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]
+
             self.train_batches.append(train_data)
             self.train_class_batches.append(train_classes)
+
+            self.train_bid_size_daily.append(bid_size_daily) 
+            self.train_bid_price_daily.append(bid_price_daily) 
+            self.train_ask_size_daily.append(ask_size_daily) 
+            self.train_ask_price_daily.append(ask_price_daily) 
+
         self.packed_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_batches if x]
         self.packed_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_class_batches if x]
+
+        # self.packed_bid_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_bid_size_daily  if x]
+        self.packed_bid_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_bid_price_daily if x]
+        # self.packed_ask_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_ask_size_daily  if x]
+        self.packed_ask_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_ask_price_daily if x]
 
         self.val_batches = []
         self.val_class_batches = []
         self.val_stock_batches = []
+        self.val_bid_size_daily  = []
+        self.val_bid_price_daily = []
+        self.val_ask_size_daily  = []
+        self.val_ask_price_daily = []
         for i in tqdm(val_range):
             self.val_stock_batches.append(self.daysDict[i])
             train_data = [self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]
@@ -127,8 +129,23 @@ class TradingData():
             self.val_batches.append(train_data)
             self.val_class_batches.append(train_classes)
 
+            bid_size_daily = [self.stocksDict[x].bid_size_daily[i] for x in self.daysDict[i]]
+            bid_price_daily = [self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]
+            ask_size_daily = [self.stocksDict[x].ask_size_daily[i] for x in self.daysDict[i]]
+            ask_price_daily = [self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]
+
+            self.val_bid_size_daily.append(bid_size_daily) 
+            self.val_bid_price_daily.append(bid_price_daily) 
+            self.val_ask_size_daily.append(ask_size_daily) 
+            self.val_ask_price_daily.append(ask_price_daily) 
+
         self.packed_val_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_batches if x]
         self.packed_val_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_class_batches if x]
+
+        # self.packed_val_bid_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_bid_size_daily  if x]
+        self.packed_val_bid_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_bid_price_daily if x]
+        # self.packed_val_ask_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_ask_size_daily  if x]
+        self.packed_val_ask_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_ask_price_daily if x]
 
     def reset_hidden(self, hidden_size=32,num_layers=2, device='cuda:0'): 
         if hidden_size==None:
@@ -167,7 +184,6 @@ class TradingData():
             if stock <5 : 
                 print(stock)
                 print(self.stocksDict[stock].hidden)
-
 
 class GRUNet(nn.Module):
 
@@ -258,12 +274,13 @@ class GRUNetV2(nn.Module):
             x = x._replace(data=self.batch_norm(x.data))
             
             x,hidden = self.gru(x,h)
-            x = self.layer_norm(x.data)
-            x = self.relu0(x)
+            # x = self.layer_norm(x.data)
+            x = self.relu0(x.data)
             x = self.drop1(x)
             x = self.fc0(x)
-            x = self.rl1(x)
-            x = self.drop1(x)
+            x = self.layer_norm(x.data)
+            x_rl1 = self.rl1(x)
+            x = self.drop1(x_rl1)
             x = self.fc1(x)
 
-        return x,hidden
+        return x,hidden,x_rl1 
