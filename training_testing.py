@@ -15,7 +15,7 @@ def custom_MSE(x,y):
 
 def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet, config:dict, optimizer, criterion):
     example_ct = 0
-    epochs = 10000
+    epochs = config['epochs']
     setup_loss = 1
     num_batches = len(trading_df.train_batches)-2
     reg_L1 = nn.L1Loss()
@@ -87,6 +87,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 @torch.no_grad()          
 def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUNet,criterion,epoch,):
     model.eval()
+    
     val_batches = trading_df.packed_val_x
     len_val = len(val_batches)
     reg_L1 = nn.L1Loss()
