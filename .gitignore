@@ -5,3 +5,4 @@ wandb/
 *.pt
 *.xlsx
 *.parquet
+*.fth
