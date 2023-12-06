@@ -102,17 +102,17 @@ class TradingData():
                     print(f'Missing Targets for {day=},for {stock_id=}, Excluding')
                     data.drop(stock_daily_data.index, inplace=True)
                     continue
-                self.stocksDict[stock_id].data_daily[day] = [torch.tensor(x[0]) for x in stock_daily_data['stats'].tolist()]
-                self.stocksDict[stock_id].data_volumes[day] = [torch.tensor(x, requires_grad=False) for x in stock_daily_data['volume'].tolist()]
-                self.stocksDict[stock_id].target_daily[day] = [torch.tensor(x, requires_grad=False) for x in stock_daily_data['target'].tolist()]
+                self.stocksDict[stock_id].data_daily[day] = torch.stack([torch.tensor(x[0]) for x in stock_daily_data['stats'].tolist()]).to('cuda:0')
+                self.stocksDict[stock_id].data_volumes[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['volume'].tolist()]).to('cuda:0')
+                self.stocksDict[stock_id].target_daily[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['target'].tolist()]).to('cuda:0')
                 
                 # self.stocksDict[stock_id].bid_size_daily[day]  = [torch.tensor(x) for x in stock_daily_data['bid_size_t-60'].tolist()]
-                self.stocksDict[stock_id].bid_price_daily[day] = [torch.tensor(x, requires_grad=False) for x in stock_daily_data['bid_price_t-60'].tolist()]
+                self.stocksDict[stock_id].bid_price_daily[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['bid_price_t-60'].tolist()]).to('cuda:0')
                 # self.stocksDict[stock_id].ask_size_daily[day]  = [torch.tensor(x) for x in stock_daily_data['ask_size_t-60'].tolist()]
-                self.stocksDict[stock_id].ask_price_daily[day] = [torch.tensor(x, requires_grad=False) for x in stock_daily_data['ask_price_t-60'].tolist()]
+                self.stocksDict[stock_id].ask_price_daily[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['ask_price_t-60'].tolist()]).to('cuda:0')
 
-                self.stocksDict[stock_id].wap_price_daily[day] = [torch.tensor(x, requires_grad=False) for x in stock_daily_data['wap_price_t-60'].tolist()]
-                self.stocksDict[stock_id].actual_wap[day] = [torch.tensor(x, requires_grad=False) for x in stock_daily_data['wap'].tolist()]
+                self.stocksDict[stock_id].wap_price_daily[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['wap_price_t-60'].tolist()]).to('cuda:0')
+                self.stocksDict[stock_id].actual_wap[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['wap'].tolist()]).to('cuda:0')
 
 
         data_grouped_daily = data.groupby('date_id')
@@ -146,15 +146,15 @@ class TradingData():
         for i in tqdm(train_range):
             self.stock_batches.append(self.daysDict[i])
             
-            train_data = [self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]
-            train_classes = [self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]
+            train_data = torch.stack([self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_classes = torch.stack([self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]).to('cuda:0')
 
             # bid_size_daily = [self.stocksDict[x].bid_size_daily[i] for x in self.daysDict[i]]
-            bid_price_daily = [self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]
+            bid_price_daily = torch.stack([self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             # ask_size_daily = [self.stocksDict[x].ask_size_daily[i] for x in self.daysDict[i]]
-            ask_price_daily = [self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]
+            ask_price_daily = torch.stack([self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
 
-            wap_price_daily = [self.stocksDict[x].wap_price_daily[i] for x in self.daysDict[i]]
+            wap_price_daily = torch.stack([self.stocksDict[x].wap_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
 
             self.train_batches.append(train_data)
             self.train_class_batches.append(train_classes)
@@ -166,14 +166,14 @@ class TradingData():
 
             self.train_wap_price_daily.append(wap_price_daily)  
 
-        self.packed_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_batches if x]
-        self.packed_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_class_batches if x]
+        # self.packed_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_batches if x]
+        # self.packed_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_class_batches if x]
 
         # self.packed_bid_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_bid_size_daily  if x]
-        self.packed_bid_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_bid_price_daily if x]
+        # self.packed_bid_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_bid_price_daily if x]
         # self.packed_ask_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_ask_size_daily  if x]
-        self.packed_ask_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_ask_price_daily if x]
-        self.packed_wap_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_wap_price_daily if x]
+        # self.packed_ask_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_ask_price_daily if x]
+        # self.packed_wap_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.train_wap_price_daily if x]
 
         self.val_batches = []
         self.val_class_batches = []
@@ -186,17 +186,17 @@ class TradingData():
         self.val_actual_wap = []
         for i in tqdm(val_range):
             self.val_stock_batches.append(self.daysDict[i])
-            train_data = [self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]
-            train_classes = [self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]
+            train_data = torch.stack([self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_classes = torch.stack([self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             self.val_batches.append(train_data)
             self.val_class_batches.append(train_classes)
 
             # bid_size_daily = [self.stocksDict[x].bid_size_daily[i] for x in self.daysDict[i]]
-            bid_price_daily = [self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]
+            bid_price_daily = torch.stack([self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             # ask_size_daily = [self.stocksDict[x].ask_size_daily[i] for x in self.daysDict[i]]
-            ask_price_daily = [self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]
-            wap_price_daily = [self.stocksDict[x].wap_price_daily[i] for x in self.daysDict[i]]
-            actual_wap = [self.stocksDict[x].actual_wap[i] for x in self.daysDict[i]]
+            ask_price_daily = torch.stack([self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
+            wap_price_daily = torch.stack([self.stocksDict[x].wap_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
+            actual_wap = torch.stack([self.stocksDict[x].actual_wap[i] for x in self.daysDict[i]]).to('cuda:0')
 
             # self.val_bid_size_daily.append(bid_size_daily) 
             self.val_bid_price_daily.append(bid_price_daily) 
@@ -205,16 +205,14 @@ class TradingData():
             self.val_wap_price_daily.append(wap_price_daily) 
             self.val_actual_wap.append(actual_wap)
 
-        self.packed_val_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_batches if x]
-        self.packed_val_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_class_batches if x]
-
+        # self.packed_val_x = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_batches if x]
+        # self.packed_val_y = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_class_batches if x]
         # self.packed_val_bid_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_bid_size_daily  if x]
-        self.packed_val_bid_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_bid_price_daily if x]
+        # self.packed_val_bid_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_bid_price_daily if x]
         # self.packed_val_ask_size_daily  = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_ask_size_daily  if x]
-        self.packed_val_ask_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_ask_price_daily if x]
-        self.packed_val_wap_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_wap_price_daily if x]
-
-        self.packed_val_actual_wap = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_actual_wap if x]
+        # self.packed_val_ask_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_ask_price_daily if x]
+        # self.packed_val_wap_price_daily = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_wap_price_daily if x]
+        # self.packed_val_actual_wap = [pack_sequence([torch.stack(n,0)for n in [[z for z in inner] for inner in x]], enforce_sorted=False).to(device='cuda:0') for x in self.val_actual_wap if x]
 
 
     def reset_hidden(self, hidden_size=32,num_layers=2, device='cuda:0'): 
@@ -305,7 +303,7 @@ class GRUNetV2(nn.Module):
 
     def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1):
         super(GRUNetV2, self).__init__()
-        self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3)
+        self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
         self.relu = nn.ReLU()
         self.relu1 = nn.ReLU()
         self.relu2 = nn.ReLU()
@@ -335,16 +333,15 @@ class GRUNetV2(nn.Module):
 
     def forward(self, x,h=None, test=False):
         x = x.float()
-        x = x._replace(data=self.batch_norm(x.data))
+        x = x.transpose(1,2)
+        x = self.batch_norm(x)
+        x = x.transpose(1,2)
         # x = x._replace(data=self.fc0(x.data))
         # x = x._replace(data=self.relu(x.data))
         
-        x_h,hidden = self.gru(x,h)
+        x_h,hidden = self.gru(x,h.contiguous())
         # x = self.layer_norm(x.data)
-        x = self.relu1(x_h.data)
-        x = x+1
-        x = x**2
-        x = x*10
+        x = self.relu1(x_h)
         x = self.drop(x)
         x = self.fc1(x)
         # x = self.layer_norm(x.data)

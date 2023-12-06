@@ -37,11 +37,18 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 
             example_ct+=1
 
-            X = trading_df.packed_x[i]
-            Y = trading_df.packed_y[i].data
-            Y_price_ask = trading_df.packed_ask_price_daily[i].data
-            Y_price_bid = trading_df.packed_bid_price_daily[i].data
-            Y_price_wap = trading_df.packed_wap_price_daily[i].data
+            # X = trading_df.packed_x[i]
+            
+            # Y = trading_df.packed_y[i].data
+            # Y_price_ask = trading_df.packed_ask_price_daily[i].data
+            # Y_price_bid = trading_df.packed_bid_price_daily[i].data
+            # Y_price_wap = trading_df.packed_wap_price_daily[i].data
+
+            new_x = trading_df.train_batches[i]
+            Y_price_ask = trading_df.train_ask_price_daily[i]
+            Y_price_bid = trading_df.train_bid_price_daily[i]
+            Y_price_wap = trading_df.train_wap_price_daily[i]
+
 
             w = torch.tensor(trading_df.daily_variance[i], device='cuda:0')
 
@@ -53,19 +60,19 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 
             # print(hidden_in.shape)
 
-            output_ask,output_bid,output_wap,hidden,_,x_h = model(X,hidden_in)
+            output_ask,output_bid,output_wap,hidden,_,x_h = model(new_x,hidden_in)
             # output_wap,hidden,_ = model(X,hidden_in)
             hidden = hidden.transpose(0,1)
-            output_ask  = torch.flatten(output_ask)
-            output_bid  = torch.flatten(output_bid)
-            output_wap  = torch.flatten(output_wap)
+            output_ask  = output_ask.squeeze()
+            output_bid  = output_bid.squeeze()
+            output_wap  = output_wap.squeeze()
 
-            [setattr(obj, 'hidden', val.detach()) for obj, val in zip(stocks,hidden)]
+            [setattr(obj, 'hidden', val) for obj, val in zip(stocks,hidden)]
 
-            if i == 0:
-                print(f"Training Output:\n{stocks=}\n\n{hidden[0][0,0:10]}")
-                print(f"{trading_df.stocksDict[0].hidden[0,0:10]}")
-                return output_ask
+            # if i == 0:
+            #     print(f"Training Output:\n{stocks=}\n\n{hidden[0][0,0:10]}")
+            #     print(f"{trading_df.stocksDict[0].hidden[0,0:10]}")
+            #     return output_ask
 
             
             # print(f"{output.shape=}")
@@ -76,7 +83,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 
             loss = (loss_ask + loss_bid + loss_wap)*w
 
-            loss.backward()
+            # loss.backward()
             # loss = loss_ask
 
             L1_loss_ask = reg_L1(output_ask,Y_price_ask).detach()
@@ -109,14 +116,16 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
                         pass
                     else:
                         wandb.log({"epoch_loss": epoch_loss/loss_count})
-                        # epoch_loss.backward()
-                        optimizer.step() 
+                        epoch_loss.backward()
+                        optimizer.step()
+                        trading_df.detach_hidden()
                     setup_loss=1
 
         if not setup_loss:
             wandb.log({"epoch_loss": epoch_loss/loss_count})
-            # epoch_loss.backward()
+            epoch_loss.backward()
             optimizer.step()
+            
 
         trading_df.detach_hidden()
         wandb.log({"loss_1": torch.mean(loss).item()})
@@ -134,7 +143,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
 def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUNet,criterion,epoch,):
     model.eval()
     
-    val_batches = trading_df.packed_val_x
+    val_batches = trading_df.val_batches
     len_val = len(val_batches)
     reg_L1 = nn.L1Loss()
     loss_list = []
@@ -170,25 +179,30 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
         # train_dog_input = trading_df.batches['train_dog_input'][i]
         time_ids = list(range(0,time_periods))
          
-        X = trading_df.packed_val_x[i]
-        new_x = torch.stack([torch.stack(x) for x in trading_df.train_batches[i]])
-        Y =  trading_df.packed_val_y[i].data
-        Y_price_ask = trading_df.packed_val_ask_price_daily[i].data
-        Y_price_bid = trading_df.packed_val_bid_price_daily[i].data
-        Y_price_wap = trading_df.packed_val_wap_price_daily[i].data
-        Y_actual_wap = trading_df.packed_val_actual_wap[i].data
+        # X = trading_df.packed_val_x[i]
+        # Y =  trading_df.packed_val_y[i].data
+        # Y_price_ask = trading_df.packed_val_ask_price_daily[i].data
+        # Y_price_bid = trading_df.packed_val_bid_price_daily[i].data
+        # Y_price_wap = trading_df.packed_val_wap_price_daily[i].data
+        Y_actual_wap = trading_df.val_actual_wap[i]
 
-        hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1)
+        new_x = trading_df.val_batches[i]
+        Y = trading_df.val_class_batches[i]
+        Y_price_ask = trading_df.val_ask_price_daily[i]
+        Y_price_bid = trading_df.val_bid_price_daily[i]
+        Y_price_wap = trading_df.val_wap_price_daily[i]
+
+        hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1).contiguous()
         # if i == 0:
         #     print(f"Validation:\n{stocks=}\n{stock_ids=}\n{hidden_in[0][0,0:10]}")
         #     print(f"{trading_df.stocksDict[0].hidden[0,0:10]}")
 
-        output_ask,output_bid,output_wap,hidden,relu,x_h = model(X,hidden_in)
+        output_ask,output_bid,output_wap,hidden,relu,x_h = model(new_x,hidden_in)
         # output_wap,hidden,relu = model(X,hidden_in)
         hidden = hidden.transpose(0,1)
-        output_ask  = torch.flatten(output_ask)
-        output_bid  = torch.flatten(output_bid)
-        output_wap  = torch.flatten(output_wap)
+        output_ask  = output_ask.squeeze()
+        output_bid  = output_bid.squeeze()
+        output_wap  = output_wap.squeeze()
 
 
         [setattr(obj, 'hidden_test', val.detach()) for obj, val in zip(stocks,hidden)]
