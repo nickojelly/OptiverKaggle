@@ -77,7 +77,7 @@ class TradingData():
        'pca_6', 'pca_7',
        'pca_8', 'pca_9']
         self.stocksDict = {}
-        
+        self.daily_variance = {}
         self.daysDict = {}
         if isinstance(train_data,pd.DataFrame):
             # self.data = train_data
@@ -120,6 +120,8 @@ class TradingData():
         for date_id, data_daily in data_grouped_daily:
             stocks = data_daily.stock_id.unique().tolist()
             self.daysDict[date_id] = stocks
+            self.daily_variance[date_id] = data_daily['wap_price_t-60'].std()
+
         gc.collect()
 
     def generate_batches(self, validation_split=0.20):
@@ -219,9 +221,9 @@ class TradingData():
         if hidden_size==None:
             hidden_size = self.hidden_size
         for stock in self.stocksDict.values():
-            stock.hidden = torch.rand(num_layers,hidden_size).to(device)
-            stock.hidden_test = torch.rand(num_layers,hidden_size).to(device)
-            stock.hidden_all = torch.rand(55,hidden_size).to(device)
+            stock.hidden =      torch.zeros(num_layers,hidden_size).to(device)
+            stock.hidden_test = torch.zeros(num_layers,hidden_size).to(device)
+            stock.hidden_all =  torch.zeros(55,hidden_size).to(device)
 
     def detach_hidden(self, stocks_list=None):
         for stock in self.stocksDict.values():
@@ -305,9 +307,12 @@ class GRUNetV2(nn.Module):
         super(GRUNetV2, self).__init__()
         self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3)
         self.relu = nn.ReLU()
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
         self.batch_norm = nn.BatchNorm1d(input_size)
         self.layer_norm = nn.LayerNorm(hidden_size)
         self.drop = nn.Dropout(dropout)
+        self.drop_1 = nn.Dropout(dropout)
         
 
         self.fc0 = nn.Linear(input_size,hidden_size)
@@ -334,18 +339,21 @@ class GRUNetV2(nn.Module):
         # x = x._replace(data=self.fc0(x.data))
         # x = x._replace(data=self.relu(x.data))
         
-        x,hidden = self.gru(x,h)
+        x_h,hidden = self.gru(x,h)
         # x = self.layer_norm(x.data)
-        x = self.relu(x.data)
+        x = self.relu1(x_h.data)
+        x = x+1
+        x = x**2
+        x = x*10
         x = self.drop(x)
         x = self.fc1(x)
-        x = self.layer_norm(x.data)
-        x_rl1 = self.relu(x)
-        x = self.drop(x_rl1)
+        # x = self.layer_norm(x.data)
+        x_rl1 = self.relu2(x)
+        x = self.drop_1(x_rl1)
 
         x_ask_price = self.fc_ask_price(x)
         x_bid_price = self.fc_bid_price(x)
         x_wap_price = self.fc_wap_price(x)
         
 
-        return x_ask_price,x_bid_price,x_wap_price,hidden,x_rl1 
+        return x_ask_price,x_bid_price,x_wap_price,hidden,x_rl1,x_h 

@@ -20,7 +20,8 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
     num_batches = len(trading_df.train_batches)-2
     reg_L1 = nn.L1Loss()
     model = model.to('cuda:0')
-    trading_df.reset_hidden(config['hidden_size'])
+    trading_df.reset_hidden(config['hidden_size'],config['num_layers'])
+    mini_batches = config['mini_batches']
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,factor=0.5)
     for epoch in trange(epochs):
         model.train()
@@ -33,6 +34,7 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             stocks = [trading_df.stocksDict[x] for x in trading_df.stock_batches[i]] #Stocks for the Day
             stock_data = trading_df.train_batches
 
+
             example_ct+=1
 
             X = trading_df.packed_x[i]
@@ -41,9 +43,17 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             Y_price_bid = trading_df.packed_bid_price_daily[i].data
             Y_price_wap = trading_df.packed_wap_price_daily[i].data
 
+            w = torch.tensor(trading_df.daily_variance[i], device='cuda:0')
+
             hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1)
 
-            output_ask,output_bid,output_wap,hidden,_ = model(X,hidden_in)
+            # if i == 0:
+            #     print(f"Training:\n{stocks=}\n\n{hidden_in[0][0,0:10]}")
+            #     print(f"{trading_df.stocksDict[0].hidden[0,0:10]}")
+
+            # print(hidden_in.shape)
+
+            output_ask,output_bid,output_wap,hidden,_,x_h = model(X,hidden_in)
             # output_wap,hidden,_ = model(X,hidden_in)
             hidden = hidden.transpose(0,1)
             output_ask  = torch.flatten(output_ask)
@@ -51,6 +61,12 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             output_wap  = torch.flatten(output_wap)
 
             [setattr(obj, 'hidden', val.detach()) for obj, val in zip(stocks,hidden)]
+
+            if i == 0:
+                print(f"Training Output:\n{stocks=}\n\n{hidden[0][0,0:10]}")
+                print(f"{trading_df.stocksDict[0].hidden[0,0:10]}")
+                return output_ask
+
             
             # print(f"{output.shape=}")
             
@@ -58,7 +74,9 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
             loss_bid = criterion(output_bid,Y_price_bid)
             loss_wap = criterion(output_wap,Y_price_wap)
 
-            loss = loss_ask + loss_bid + loss_wap
+            loss = (loss_ask + loss_bid + loss_wap)*w
+
+            loss.backward()
             # loss = loss_ask
 
             L1_loss_ask = reg_L1(output_ask,Y_price_ask).detach()
@@ -72,10 +90,8 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
                     #    "loss_bid": torch.mean(loss_bid).item()})
 
             # wandb.log({"loss_wap": torch.mean(loss_wap).item()})
-
             # loss.backward()
             # # optimizer.step()
-
             if setup_loss:
                 epoch_loss = loss
                 epoch_reg_l1 = L1_loss
@@ -88,18 +104,18 @@ def train_model(trading_df:torch_classes.TradingData, model:torch_classes.GRUNet
                 epoch_loss = loss+epoch_loss
                 loss_count+=1
                 epoch_reg_l1 = L1_loss+epoch_reg_l1
-                if i%100==0:
+                if i%mini_batches==0:
                     if i==0:
                         pass
                     else:
                         wandb.log({"epoch_loss": epoch_loss/loss_count})
-                        epoch_loss.backward()
+                        # epoch_loss.backward()
                         optimizer.step() 
                     setup_loss=1
 
         if not setup_loss:
             wandb.log({"epoch_loss": epoch_loss/loss_count})
-            epoch_loss.backward()
+            # epoch_loss.backward()
             optimizer.step()
 
         trading_df.detach_hidden()
@@ -138,6 +154,8 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
     output_dict['wap_pred'] = []
     output_dict['actual_wap'] = []
 
+    
+
     time_periods = len(trading_df.stocksDict[0].data_daily[0])
     
 
@@ -153,6 +171,7 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
         time_ids = list(range(0,time_periods))
          
         X = trading_df.packed_val_x[i]
+        new_x = torch.stack([torch.stack(x) for x in trading_df.train_batches[i]])
         Y =  trading_df.packed_val_y[i].data
         Y_price_ask = trading_df.packed_val_ask_price_daily[i].data
         Y_price_bid = trading_df.packed_val_bid_price_daily[i].data
@@ -160,8 +179,11 @@ def validate_model(trading_df:torch_classes.TradingData,model:torch_classes.GRUN
         Y_actual_wap = trading_df.packed_val_actual_wap[i].data
 
         hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0,1)
+        # if i == 0:
+        #     print(f"Validation:\n{stocks=}\n{stock_ids=}\n{hidden_in[0][0,0:10]}")
+        #     print(f"{trading_df.stocksDict[0].hidden[0,0:10]}")
 
-        output_ask,output_bid,output_wap,hidden,relu = model(X,hidden_in)
+        output_ask,output_bid,output_wap,hidden,relu,x_h = model(X,hidden_in)
         # output_wap,hidden,relu = model(X,hidden_in)
         hidden = hidden.transpose(0,1)
         output_ask  = torch.flatten(output_ask)
