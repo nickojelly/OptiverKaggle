@@ -1,0 +1,73 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r pressure, echo=FALSE}
+train <- read.csv("~/GitHub/OptiverKaggle/train.csv")
+test <- read.csv("~/GitHub/OptiverKaggle/submission.csv")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r fig1, fig.height = 10, fig.width = 20}
+train$date_factor = as.factor(train$date_id)
+train$stock_factor = as.factor(train$stock_id)
+train = as_tibble(train)
+train_last_min = train %>% filter(seconds_in_bucket>480)
+train %>% group_by(seconds_in_bucket) %>% mutate(sd = sd(target))
+p <- ggplot(train, aes(x=target, color=stock_factor)) +
+  geom_density()+
+  geom_density(aes(x=target,color=stock_id))+
+  xlim(-50,50)+
+  theme(legend.position="none")
+p
+
+```
+
+```{r fig2, fig.height = 10, fig.width = 20}
+test$date_factor = as.factor(test$date_id)
+test$stock_factor = as.factor(test$stock_id)
+test = as_tibble(test)
+train_last_min = train %>% filter(seconds_in_bucket>480)
+p <- ggplot(test, aes(color=stock_factor)) +
+  geom_density(aes(x=target))+
+  geom_density(aes(x=predictions))+
+  xlim(-50,50)+
+  theme(legend.position="none")
+p
+
+```
+
+```{r fig1, fig.height = 10, fig.width = 20}
+test$date_factor = as.factor(test$date_id)
+test$stock_factor = as.factor(test$stock_id)
+test = as_tibble(test)
+train_last_min = test %>% filter(seconds_in_bucket>480)
+p <- ggplot(train_last_min, aes(x=predictions, color=stock_factor)) +
+  geom_density()+
+  xlim(-50,50)+
+  theme(legend.position="none")
+p
+
+```
+
