@@ -6,3 +6,4 @@ wandb/
 *.xlsx
 *.parquet
 *.fth
+*.pqt

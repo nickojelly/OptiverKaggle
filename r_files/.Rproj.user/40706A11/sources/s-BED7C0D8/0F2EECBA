@@ -1,0 +1,27 @@
+{
+    "id": "0F2EECBA",
+    "path": "~/GitHub/OptiverKaggle/r_files/train_distributions.Rmd",
+    "project_path": "train_distributions.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1701974371349.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "55,0",
+        "scrollLine": "24",
+        "last_setup_crc32": "BED7C0D8bb338d19"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1701096399,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1701974869585,
+    "read_only": false,
+    "read_only_alternatives": []
+}

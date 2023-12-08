@@ -16,6 +16,7 @@ class Stock():
         self.data_daily = {}
         self.data_volumes = {}
         self.target_daily = {}
+        self.target_daily_ohe = {}
         self.bid_size_daily = {}
         self.bid_price_daily = {}
         self.ask_size_daily = {}
@@ -105,6 +106,7 @@ class TradingData():
                 self.stocksDict[stock_id].data_daily[day] = torch.stack([torch.tensor(x[0]) for x in stock_daily_data['stats'].tolist()]).to('cuda:0')
                 self.stocksDict[stock_id].data_volumes[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['volume'].tolist()]).to('cuda:0')
                 self.stocksDict[stock_id].target_daily[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['target'].tolist()]).to('cuda:0')
+                self.stocksDict[stock_id].target_daily_ohe[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['wap_target_OHE'].tolist()]).to('cuda:0')
                 
                 # self.stocksDict[stock_id].bid_size_daily[day]  = [torch.tensor(x) for x in stock_daily_data['bid_size_t-60'].tolist()]
                 self.stocksDict[stock_id].bid_price_daily[day] = torch.stack([torch.tensor(x, requires_grad=False) for x in stock_daily_data['bid_price_t-60'].tolist()]).to('cuda:0')
@@ -135,6 +137,7 @@ class TradingData():
 
         self.train_batches = []
         self.train_class_batches = []
+        self.train_class_ohe_batches = []
         self.stock_batches = []
         self.train_bid_size_daily  = []
         self.train_bid_price_daily = []
@@ -148,6 +151,7 @@ class TradingData():
             
             train_data = torch.stack([self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             train_classes = torch.stack([self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_classes_ohe = torch.stack([self.stocksDict[x].target_daily_ohe[i] for x in self.daysDict[i]]).to('cuda:0')
 
             # bid_size_daily = [self.stocksDict[x].bid_size_daily[i] for x in self.daysDict[i]]
             bid_price_daily = torch.stack([self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
@@ -158,6 +162,7 @@ class TradingData():
 
             self.train_batches.append(train_data)
             self.train_class_batches.append(train_classes)
+            self.train_class_ohe_batches.append(train_classes_ohe)
 
             # self.train_bid_size_daily.append(bid_size_daily) 
             self.train_bid_price_daily.append(bid_price_daily) 
@@ -177,6 +182,7 @@ class TradingData():
 
         self.val_batches = []
         self.val_class_batches = []
+        self.val_class_ohe_batches = []
         self.val_stock_batches = []
         self.val_bid_size_daily  = []
         self.val_bid_price_daily = []
@@ -188,8 +194,10 @@ class TradingData():
             self.val_stock_batches.append(self.daysDict[i])
             train_data = torch.stack([self.stocksDict[x].data_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             train_classes = torch.stack([self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_classes_ohe = torch.stack([self.stocksDict[x].target_daily_ohe[i] for x in self.daysDict[i]]).to('cuda:0')
             self.val_batches.append(train_data)
             self.val_class_batches.append(train_classes)
+            self.val_class_ohe_batches.append(train_classes_ohe)
 
             # bid_size_daily = [self.stocksDict[x].bid_size_daily[i] for x in self.daysDict[i]]
             bid_price_daily = torch.stack([self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
@@ -313,7 +321,7 @@ class GRUNetV2(nn.Module):
         self.drop_1 = nn.Dropout(dropout)
         
 
-        self.fc0 = nn.Linear(input_size,hidden_size)
+        self.fc0 = nn.Linear(input_size,input_size)
         self.fc1 = nn.Linear(hidden_size,hidden_size)        
 
         self.fc_ask_price = nn.Linear(hidden_size, 1)
@@ -336,15 +344,71 @@ class GRUNetV2(nn.Module):
         x = x.transpose(1,2)
         x = self.batch_norm(x)
         x = x.transpose(1,2)
-        # x = x._replace(data=self.fc0(x.data))
-        # x = x._replace(data=self.relu(x.data))
+        x = self.fc0(x)
+        x = self.relu(x)
         
         x_h,hidden = self.gru(x,h.contiguous())
-        # x = self.layer_norm(x.data)
-        x = self.relu1(x_h)
+        x = self.layer_norm(x_h)
+        x = self.relu1(x)
         x = self.drop(x)
         x = self.fc1(x)
-        # x = self.layer_norm(x.data)
+        x = self.layer_norm(x)
+        x_rl1 = self.relu2(x)
+        x = self.drop_1(x_rl1)
+
+        x_ask_price = self.fc_ask_price(x)
+        x_bid_price = self.fc_bid_price(x)
+        x_wap_price = self.fc_wap_price(x)
+        
+
+        return x_ask_price,x_bid_price,x_wap_price,hidden,x_rl1,x_h
+
+class GRUNetV2(nn.Module):
+
+    def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1):
+        super(GRUNetV2, self).__init__()
+        self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
+        self.relu = nn.ReLU()
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.drop = nn.Dropout(dropout)
+        self.drop_1 = nn.Dropout(dropout)
+        
+
+        self.fc0 = nn.Linear(input_size,input_size)
+        self.fc1 = nn.Linear(hidden_size,hidden_size)        
+
+        self.fc_ask_price = nn.Linear(hidden_size, 1)
+        self.fc_bid_price = nn.Linear(hidden_size, 1)
+        self.fc_wap_price = nn.Linear(hidden_size, 1)
+
+
+
+        #regular
+        self.fc2 = nn.Linear(fc0_size, fc1_size)
+        self.fc3 = nn.Linear(fc1_size, 8)
+        self.hidden_size = hidden_size
+
+        #bid ask
+
+
+
+    def forward(self, x,h=None, test=False):
+        x = x.float()
+        x = x.transpose(1,2)
+        x = self.batch_norm(x)
+        x = x.transpose(1,2)
+        x = self.fc0(x)
+        x = self.relu(x)
+        
+        x_h,hidden = self.gru(x,h.contiguous())
+        x = self.layer_norm(x_h)
+        x = self.relu1(x)
+        x = self.drop(x)
+        x = self.fc1(x)
+        x = self.layer_norm(x)
         x_rl1 = self.relu2(x)
         x = self.drop_1(x_rl1)
 
