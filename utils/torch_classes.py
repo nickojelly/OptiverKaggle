@@ -363,10 +363,10 @@ class GRUNetV2(nn.Module):
 
         return x_ask_price,x_bid_price,x_wap_price,hidden,x_rl1,x_h
 
-class GRUNetV2(nn.Module):
+class GRUNetV3(nn.Module):
 
     def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1):
-        super(GRUNetV2, self).__init__()
+        super(GRUNetV3, self).__init__()
         self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
         self.relu = nn.ReLU()
         self.relu1 = nn.ReLU()
@@ -380,15 +380,9 @@ class GRUNetV2(nn.Module):
         self.fc0 = nn.Linear(input_size,input_size)
         self.fc1 = nn.Linear(hidden_size,hidden_size)        
 
-        self.fc_ask_price = nn.Linear(hidden_size, 1)
-        self.fc_bid_price = nn.Linear(hidden_size, 1)
-        self.fc_wap_price = nn.Linear(hidden_size, 1)
-
-
+        self.fc_final = nn.Linear(hidden_size, 7)
 
         #regular
-        self.fc2 = nn.Linear(fc0_size, fc1_size)
-        self.fc3 = nn.Linear(fc1_size, 8)
         self.hidden_size = hidden_size
 
         #bid ask
@@ -412,9 +406,8 @@ class GRUNetV2(nn.Module):
         x_rl1 = self.relu2(x)
         x = self.drop_1(x_rl1)
 
-        x_ask_price = self.fc_ask_price(x)
-        x_bid_price = self.fc_bid_price(x)
-        x_wap_price = self.fc_wap_price(x)
+        x = self.fc_final(x)
+
         
 
-        return x_ask_price,x_bid_price,x_wap_price,hidden,x_rl1,x_h 
+        return x,hidden,x_rl1,x_h 
