@@ -103,11 +103,11 @@ def train_model(
             ).square()
 
             
-            hidden_all_in = torch.cat([trading_df.stocksDict[s].hidden_out for s in range(0,200)],dim=1)
-            output_all = model(hidden_all_in, p2=True)
+            # hidden_all_in = torch.cat([trading_df.stocksDict[s].hidden_out for s in range(0,200)],dim=1)
+            # output_all = model(hidden_all_in, p2=True)
 
 
-            output_all = output_all[:,stock_ids,:].transpose(0,1)
+            # output_all = output_all[:,stock_ids,:].transpose(0,1)
             # print(i)
 
             # print(F"{output_all.shape=}")
@@ -122,7 +122,7 @@ def train_model(
             # print(f"{output_all[:,stock_ids,:].shape}")
             # return output_all
 
-            loss_all = criterion(output_all.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1)).mean()
+            # loss_all = criterion(output_all.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1)).mean()
 
             # print(f"{loss_all=}")
 
@@ -142,7 +142,7 @@ def train_model(
             ).mean()
             # print(loss)
 
-            L1_loss_wap = reg_L1(output_wap, Y_price_wap)
+            # L1_loss_wap = reg_L1(output_wap, Y_price_wap)
             L1_loss_target = reg_L1(output_target, Y)
             loss = loss + L1_loss_target
 
@@ -158,7 +158,7 @@ def train_model(
                 epoch_loss = loss
                 # epoch_reg_l1 = L1_loss
                 L1_loss_target_epoch = L1_loss_target
-                loss_all_epoch = loss_all
+                # loss_all_epoch = loss_all
                 setup_loss = 0
                 loss_count = 1
             else:
@@ -169,12 +169,14 @@ def train_model(
                 loss_count += 1
                 # epoch_reg_l1 = L1_loss+epoch_reg_l1
                 L1_loss_target_epoch = L1_loss_target + L1_loss_target_epoch
-                loss_all_epoch += loss_all
+                # loss_all_epoch += loss_all
                 if i % mini_batches == 0:
                     if i == 0:
                         pass
                     else:
-                        wandb.log({"epoch_loss": epoch_loss / loss_count, "all_target_loss": loss_all})
+                        wandb.log({"epoch_loss": epoch_loss / loss_count, 
+                                #    "all_target_loss": loss_all
+                                   })
                         # epoch_loss.backward()
                         # epoch_loss.backward()
                         optimizer.step()
@@ -189,7 +191,9 @@ def train_model(
             trading_df.detach_hidden_out()
 
         if not setup_loss:
-            wandb.log({"epoch_loss": epoch_loss / loss_count, "all_target_loss": loss_all})
+            wandb.log({"epoch_loss": epoch_loss / loss_count, 
+                    #    "all_target_loss": loss_all
+                       })
             # epoch_loss.backward()
             optimizer.step()
             # optim2.step()
@@ -276,7 +280,7 @@ def validate_model(
         [setattr(obj, "hidden", val.detach()) for obj, val in zip(stocks, hidden)]
         [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks,  x_h)]
 
-        hidden_all_in = torch.cat([trading_df.stocksDict[s].hidden_out for s in range(0,200)],dim=1).detach()
+        # hidden_all_in = torch.cat([trading_df.stocksDict[s].hidden_out for s in range(0,200)],dim=1).detach()
 
 
 
@@ -284,15 +288,15 @@ def validate_model(
 
         # print(hidden_all_in.shape)
 
-        output_all = model(hidden_all_in, p2=True)
+        # output_all = model(hidden_all_in, p2=True)
 
-        output_all = output_all[:,stock_ids,:].transpose(0,1)
+        # output_all = output_all[:,stock_ids,:].transpose(0,1)
 
         # print(f"{output_all.shape=}")
 
-        loss_all = criterion(output_all.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1)).mean()
+        # loss_all = criterion(output_all.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1)).mean()
 
-        loss_wap = reg_L1(output_wap, Y_price_wap)
+        # loss_wap = reg_L1(output_wap, Y_price_wap)
         loss_target = reg_L1(output_target, Y)
 
 
@@ -304,9 +308,9 @@ def validate_model(
         # onehot_win = F.one_hot(actual, num_classes=7)
         conf, predicted = torch.max(output, 2)
 
-        _, actual_all = torch.max(Y_ohe_target, 2)
+        # _, actual_all = torch.max(Y_ohe_target, 2)
         # onehot_win = F.one_hot(actual, num_classes=7)
-        conf, predicted_all = torch.max(output_all, 2)
+        # conf, predicted_all = torch.max(output_all, 2)
 
         # One hot wins
         label = torch.zeros_like(Y_ohe_target).scatter_(
@@ -318,19 +322,19 @@ def validate_model(
         # correct_tensor = label*pred_label
 
         correct_l = predicted == actual
-        correct_all = predicted_all == actual_all
+        # correct_all = predicted_all == actual_all
         softmax_preds = sft_max(output)
 
         if i == 0:
             epoch_loss = loss
-            L1_loss_wap_epoch = loss_wap
+            # L1_loss_wap_epoch = loss_wap
             L1_loss_target_epoch = loss_target
-            loss_all_epoch = loss_all
+            # loss_all_epoch = loss_all
         else:
             epoch_loss = loss + epoch_loss
-            L1_loss_wap_epoch += loss_wap
+            # L1_loss_wap_epoch += loss_wap
             L1_loss_target_epoch += loss_target
-            loss_all_epoch += loss_all
+            # loss_all_epoch += loss_all
 
         output_dict["stock"].append(stock_ids * time_periods)
         output_dict["day"].append([i + 384] * time_periods * len(stock_ids))
@@ -338,13 +342,13 @@ def validate_model(
         output_dict["target"].append(Y.flatten().tolist())
         output_dict["target_pred"].append(output_target.flatten().tolist())
         output_dict["correct"].append(correct_l.flatten().tolist())
-        output_dict["correct_all"].append(correct_all.flatten().tolist())
+        # output_dict["correct_all"].append(correct_all.flatten().tolist())
         output_dict["actual"].append(actual.flatten().tolist())
         output_dict["pred"].append(predicted.flatten().tolist())
-        output_dict["all_actual"].append(actual_all.flatten().tolist())
-        output_dict["all_pred"].append(predicted_all.flatten().tolist())
+        # output_dict["all_actual"].append(actual_all.flatten().tolist())
+        # output_dict["all_pred"].append(predicted_all.flatten().tolist())
         output_dict["wap_target"].append(Y_price_wap.flatten().tolist())
-        output_dict["wap_pred"].append(output_wap.flatten().tolist())
+        # output_dict["wap_pred"].append(output_wap.flatten().tolist())
         output_dict["actual_wap"].append(Y_actual_wap.flatten().tolist())
         output_dict["loss"].append(loss_list.flatten().tolist())
         output_dict["conf"].append(conf.flatten().tolist())
@@ -369,14 +373,14 @@ def validate_model(
     wandb.log(
         {
             "val_epoch_loss": epoch_loss / len_val,
-            "val_epoch_loss_all": loss_all_epoch / len_val,
+            # "val_epoch_loss_all": loss_all_epoch / len_val,
             "val_loss": torch.mean(loss).item(),
             'val_loss_target_l1' : L1_loss_target_epoch/len_val,
             "epoch": epoch,
             "relu_sum": relu.sum(),
-            "L1_loss_wap_epoch": L1_loss_wap_epoch / len_val,
+            # "L1_loss_wap_epoch": L1_loss_wap_epoch / len_val,
             "Accuracy": log_dict.correct.mean(),
-            "Accuracy_all": log_dict.correct_all.mean(),
+            # "Accuracy_all": log_dict.correct_all.mean(),
             "wap_pred_loss": log_dict["loss_adj"].mean(),
             "losst_to_zero": abs(log_dict["target"]).mean(),
         }
@@ -389,11 +393,11 @@ def validate_model(
             preds=log_dict["pred"],
             class_names=means.target_cat_name.tolist(),
         )
-        cm2 = wandb.plot.confusion_matrix(
-            y_true=log_dict["all_actual"],
-            preds=log_dict["all_pred"],
-            class_names=means.target_cat_name.tolist(),
-        )
+        # cm2 = wandb.plot.confusion_matrix(
+        #     y_true=log_dict["all_actual"],
+        #     preds=log_dict["all_pred"],
+        #     class_names=means.target_cat_name.tolist(),
+        # )
         # log_dict.to_feather(
         #     f"archive/validation_outputs/{wandb.run.name}_validation_output_{epoch}.fth"
         # )
@@ -409,7 +413,7 @@ def validate_model(
         
         try:
             wandb.log({"conf_mat": cm})
-            wandb.log({"conf_mat2": cm2})
+            # wandb.log({"conf_mat2": cm2})
             wandb.log({"loss_table": loss_dict})
             wandb.log({"data_table": log_dict})
         except Exception as e:

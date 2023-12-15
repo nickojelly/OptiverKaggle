@@ -414,7 +414,7 @@ class GRUNetV3(nn.Module):
             x_wap = x
 
             #target regression
-            x_target = self.fc_target0(x_ohe.detach())
+            x_target = self.fc_target0(x_ohe)
             x_target = self.fc_target_relu(x_target)
             x_target = self.fc_target1(x_target)
 
