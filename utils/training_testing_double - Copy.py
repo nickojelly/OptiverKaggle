@@ -94,56 +94,85 @@ def train_model(
             Y_ohe_wap = trading_df.train_wap_ohe_batches[i]
             Y_ohe_target = trading_df.train_target_ohe_batches[i]
 
-            #silly hack to change from wpa to target
-            Y_ohe_wap = Y_ohe_target
-            Y_price_wap = Y
-
             daily_weights = trading_df.target_daily_weights[i]
 
             criterion.weight = daily_weights
 
             hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0, 1)
 
+            # if i == 0:
+            #     print(hidden_in.shape)
+            #     print(hidden_in)
 
-
-            output_wap_ohe, output_wap, hidden, _, x_h = model(new_x, hidden_in)
+            output_tgt_ohe,output_wap_ohe, output_wap,output_target, hidden, _, x_h = model(new_x, hidden_in)
+            output_tgt_ohe = output_tgt_ohe.squeeze()
             output_wap_ohe = output_wap_ohe.squeeze()
 
             hidden = hidden.transpose(0, 1)
             output_wap = output_wap.squeeze()
-            # output_target = output_target.squeeze()
+            output_target = output_target.squeeze()
 
-            # [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks, x_h)]
-            [setattr(obj, "hidden", val) for obj, val in zip(stocks, hidden)]
+            # print(x_h.shape)
+
+            [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks, x_h)]
+            # [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks, output)]
+
+            # print(f"{stocks[0].hidden_out.shape=}")
+
+            [setattr(obj, "hidden", val.detach()) for obj, val in zip(stocks, hidden)]
 
             weight_dif = (
-                abs(torch.argmax(output_wap_ohe, dim=2) - torch.argmax(Y_ohe_wap, dim=2)) + 1
+                abs(torch.argmax(output_tgt_ohe, dim=2) - torch.argmax(Y_ohe_target, dim=2)) + 1
             )
+            
+            # hidden_all_in = torch.cat([trading_df.stocksDict[s].hidden_out for s in range(0,200)],dim=1)
+            # output_all = model(hidden_all_in, p2=True)
 
+
+            # output_all = output_all[:,stock_ids,:].transpose(0,1)
+            # print(i)
+
+            # print(F"{output_all.shape=}")
+            # print(F"{Y_ohe_target.shape=}")
+
+            # print(((Y_ohe_target != output_all)).sum())
+            # if (Y_ohe_target != output_all).sum()>0:
+            #     return output_all,Y_ohe_target,stock_ids
+
+            # print(f"{output_all.shape=}")
+
+            # print(f"{output_all[:,stock_ids,:].shape}")
+            # return output_all
+
+            # loss_all = criterion(output_all.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1)).mean()
+
+            loss_tgt_ohe = (
+                criterion(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
+            ).mean()
             
             loss_wap_ohe = (
-                criterion(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1)) *weight_dif
+                criterion(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1)) 
             ).mean()
-
+            # print(loss)
 
             L1_loss_wap = reg_L1(output_wap, Y_price_wap)
+            L1_loss_target = reg_L1(output_target, Y)
             
 
+            train_tgt_total_loss +=  loss_tgt_ohe.item()
             train_wap_total_loss +=  loss_wap_ohe.item()
             train_l1_loss_wap += L1_loss_wap.item()
+            train_l1_loss_target += L1_loss_target.item()
 
-            # train_tgt_total_loss +=  loss_tgt_ohe.item()
-            # L1_loss_target = reg_L1(output_target, Y)
-            # train_l1_loss_target += L1_loss_target.item()
-
-            # loss = L1_loss_target + loss_tgt_ohe + loss_wap_ohe + L1_loss_wap
-            loss = L1_loss_wap + loss_wap_ohe
-
+            loss = L1_loss_target + loss_tgt_ohe + loss_wap_ohe + L1_loss_wap
+            loss = loss_wap_ohe + L1_loss_wap
+            loss.backward()
+            optimizer.step()
 
             if setup_loss:
                 epoch_loss = loss
                 # epoch_reg_l1 = L1_loss
-                # L1_loss_target_epoch = L1_loss_target
+                L1_loss_target_epoch = L1_loss_target
                 # loss_all_epoch = loss_all
                 setup_loss = 0
                 loss_count = 1
@@ -163,7 +192,7 @@ def train_model(
                         wandb.log({"epoch_loss": epoch_loss / loss_count, 
                                 #    "all_target_loss": loss_all
                                    })
-                        epoch_loss.backward()
+                        # epoch_loss.backward()
                         optimizer.step()
                         trading_df.detach_hidden()
 
@@ -190,7 +219,7 @@ def train_model(
                 "train_target_loss": train_l1_loss_target/384,
                 "train_class_wap_loss": train_wap_total_loss/384,
                 "train_class_tgt_loss": train_tgt_total_loss/384,
-                "output_sd": torch.std(output_wap_ohe),
+                "output_sd": torch.std(output_tgt_ohe),
             }
         )
         validate_model(trading_df, model, criterion, epoch, config)
@@ -252,55 +281,94 @@ def validate_model(
         Y_ohe_wap = trading_df.val_wap_ohe_batches[i]
         Y_ohe_target = trading_df.val_target_ohe_batches[i]
 
-        #silly hack to change from wpa to target
-        Y_ohe_wap = Y_ohe_target
-        Y_price_wap = Y
-
         hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0, 1).contiguous()
 
-        output_wap_ohe, output_wap, hidden, relu, x_h = model(new_x, hidden_in)
-
+        output_tgt_ohe,output_wap_ohe, output_wap,output_target, hidden, relu, x_h = model(new_x, hidden_in)
+        output_tgt_ohe = output_tgt_ohe.squeeze()
         output_wap_ohe = output_wap_ohe.squeeze()
+        # output_wap,hidden,relu = model(X,hidden_in)
         hidden = hidden.transpose(0, 1)
         output_wap = output_wap.squeeze()
+        output_target = output_target.squeeze()
+        # print(hidden_in)
 
         [setattr(obj, "hidden", val.detach()) for obj, val in zip(stocks, hidden)]
         [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks,  x_h)]
 
+        # hidden_all_in = torch.cat([trading_df.stocksDict[s].hidden_out for s in range(0,200)],dim=1).detach()
+
+
+
+
+
+        # print(hidden_all_in.shape)
+
+        # output_all = model(hidden_all_in, p2=True)
+
+        # output_all = output_all[:,stock_ids,:].transpose(0,1)
+
+        # print(f"{output_all.shape=}")
+
+        # loss_all = criterion(output_all.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1)).mean()
 
         loss_wap = reg_L1(output_wap, Y_price_wap)
+        loss_target = reg_L1(output_target, Y)
+
+
+        loss_tgt_ohe = criterion(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
+        loss_list = reg_CEL(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
+
         loss_wap_ohe = criterion(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1))
         loss_list = reg_CEL(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1))
+        
+        # print(f"{output.shape=}\n{output_all.shape=}")
+        _, actual = torch.max(Y_ohe_target, 2)
+        # onehot_win = F.one_hot(actual, num_classes=7)
+        conf, predicted = torch.max(output_tgt_ohe, 2)
+        correct_tgt = predicted == actual
+
         _, actual = torch.max(Y_ohe_wap, 2)
+        # onehot_win = F.one_hot(actual, num_classes=7)
         conf, predicted = torch.max(output_wap_ohe, 2)
         correct_wap = predicted == actual
 
-        # loss_target = reg_L1(output_target, Y)
-        # loss_tgt_ohe = criterion(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
-        # loss_list = reg_CEL(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
-        # _, actual = torch.max(Y_ohe_target, 2)
-        # conf, predicted = torch.max(output_tgt_ohe, 2)
-        # correct_tgt = predicted == actual
+        # _, actual_all = torch.max(Y_ohe_target, 2)
+        # onehot_win = F.one_hot(actual, num_classes=7)
+        # conf, predicted_all = torch.max(output_all, 2)
 
+        # One hot wins
+        label = torch.zeros_like(Y_ohe_target).scatter_(
+            1, torch.argmax(Y_ohe_target, dim=1).unsqueeze(1), 1.0
+        )
+        pred_label = torch.zeros_like(output_tgt_ohe).scatter_(
+            1, torch.argmax(output_tgt_ohe, dim=1).unsqueeze(1), 1.0
+        )
+        # correct_tensor = label*pred_label
+
+        correct_l = predicted == actual
+
+        # correct_all = predicted_all == actual_all
+        softmax_preds = sft_max(output_tgt_ohe)
 
         if i == 0:
-            # epoch_loss_tgt = loss_tgt_ohe
+            epoch_loss_tgt = loss_tgt_ohe
             epoch_loss_wap = loss_wap_ohe
             L1_loss_wap_epoch = loss_wap
-            # L1_loss_target_epoch = loss_target
+            L1_loss_target_epoch = loss_target
             # loss_all_epoch = loss_all
         else:
-            # epoch_loss_tgt = loss_tgt_ohe + epoch_loss_tgt
+            epoch_loss_tgt = loss_tgt_ohe + epoch_loss_tgt
             epoch_loss_wap = loss_wap_ohe + epoch_loss_wap
             L1_loss_wap_epoch += loss_wap
-            # L1_loss_target_epoch += loss_target
+            L1_loss_target_epoch += loss_target
+            # loss_all_epoch += loss_all
 
         output_dict["stock"].append(stock_ids * time_periods)
         output_dict["day"].append([i + 384] * time_periods * len(stock_ids))
         output_dict["time"].extend([[x] * len(stock_ids) for x in time_ids])
         output_dict["target"].append(Y.flatten().tolist())
-        # output_dict["target_pred"].append(output_target.flatten().tolist())
-        # output_dict["correct_tgt"].append(correct_tgt.flatten().tolist())
+        output_dict["target_pred"].append(output_target.flatten().tolist())
+        output_dict["correct_tgt"].append(correct_tgt.flatten().tolist())
         output_dict["correct_wap"].append(correct_wap.flatten().tolist())
         # output_dict["correct_all"].append(correct_all.flatten().tolist())
         output_dict["actual"].append(actual.flatten().tolist())
@@ -335,16 +403,16 @@ def validate_model(
 
     wandb.log(
         {
-            # "val_epoch_loss_tgt": epoch_loss_tgt / len_val,
+            "val_epoch_loss_tgt": epoch_loss_tgt / len_val,
             "val_epoch_loss_wap": epoch_loss_wap / len_val,
             # "val_epoch_loss_all": loss_all_epoch / len_val,
-            # "val_loss_tgt_ohe": torch.mean(loss_tgt_ohe).item(),
+            "val_loss_tgt_ohe": torch.mean(loss_tgt_ohe).item(),
             "val_loss_wap_ohe": torch.mean(loss_wap_ohe).item(),
-            # 'val_loss_target_l1' : L1_loss_target_epoch/len_val,
+            'val_loss_target_l1' : L1_loss_target_epoch/len_val,
             "epoch": epoch,
             "relu_sum": relu.sum(),
             "L1_loss_wap_epoch": L1_loss_wap_epoch / len_val,
-            # "Accuracy_tgt": log_dict.correct_tgt.mean(),
+            "Accuracy_tgt": log_dict.correct_tgt.mean(),
             "Accuracy_wap": log_dict.correct_wap.mean(),
             # "Accuracy_all": log_dict.correct_all.mean(),
             "wap_pred_loss": log_dict["loss_adj"].mean(),
@@ -388,7 +456,7 @@ def validate_model(
             print(e)
             pass
 
-    return epoch_loss_wap / len_val
+    return epoch_loss_tgt / len_val
 
 def generate_prev_race(df_in, df_g, rolling_window=10, factor=''):
     df = df_in.copy()

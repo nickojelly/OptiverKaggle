@@ -449,8 +449,6 @@ class GRUNetV4(nn.Module):
         super(GRUNetV4, self).__init__()
         self.gru = nn.GRU(hidden_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
         self.relu = nn.ReLU()
-        self.relu1 = nn.ReLU()
-        self.relu2 = nn.ReLU()
         self.batch_norm = nn.BatchNorm1d(input_size)
         self.layer_norm = nn.LayerNorm(hidden_size)
         self.layer_norm2 = nn.LayerNorm(fc0_size)
@@ -459,25 +457,15 @@ class GRUNetV4(nn.Module):
         
 
         self.fc0 = nn.Linear(input_size,hidden_size)
-        # self.fc01 = nn.Linear(input_size,input_size)
         self.fc1 = nn.Linear(hidden_size,fc0_size)        
         self.fc_final = nn.Linear(fc0_size, target_size)
 
-        self.fc_wap0 = nn.Linear(target_size,64)
-        self.fc_wap_relu = nn.ReLU()
-        self.fc_wap1 = nn.Linear(64,1)
-
-        self.fc_target0 = nn.Linear(target_size,64)
-        self.fc_target_relu = nn.ReLU()
-        self.fc_target1 = nn.Linear(64,1)
-
+        self.fc_reg0 = nn.Linear(target_size,128)
+        self.fc_reg1 = nn.Linear(128,64)
+        self.fc_reg2 = nn.Linear(64,1)
 
         #regular
         self.hidden_size = hidden_size
-
-        #bid ask
-
-
 
     def forward(self, x,h=None, test=False):
         x = x.float()
@@ -486,32 +474,24 @@ class GRUNetV4(nn.Module):
         x = x.transpose(1,2)
         x = self.fc0(x)
         x = self.relu(x)
-
-        # x = self.fc01(x)
-        # x = self.relu(x)
-        
         x_h,hidden = self.gru(x,h.contiguous())
+
         x = self.layer_norm(x_h)
-        x = self.relu1(x)
+        x = self.relu(x)
         x = self.drop(x)
         x = self.fc1(x)
         x = self.layer_norm2(x)
-        x_rl1 = self.relu2(x)
+        x_rl1 = self.relu(x)
         x = self.drop_1(x_rl1)
-
         x_ohe = self.fc_final(x)
 
-        x_wap = self.fc_wap0(x_ohe.detach())
-        x_wap = self.fc_wap_relu(x_wap)
-        x_wap = self.fc_wap1(x_wap)
+        x_reg = self.fc_reg0(x_ohe.detach())
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg1(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg2(x_reg)
 
-        x_target = self.fc_target0(x_ohe.detach())
-        x_target = self.fc_target_relu(x_target)
-        x_target = self.fc_target1(x_target)
-
-        
-
-        return x_ohe,x_wap,x_target,hidden,x_rl1,x_h 
+        return x_ohe,x_reg,hidden,x_rl1,x_h 
     
 class GRUNetV5(nn.Module):
 
