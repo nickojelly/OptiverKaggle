@@ -22,7 +22,7 @@ def model_saver_linux(model, optimizer, epoch, loss, hidden_state_dict,train_sta
             f"models/{model_name}.pt",
         )
     else:
-        print("created path")
+        # print("created path")
         os.makedirs(
             f"C:/Users/Nick/Documents/GitHub/OptiverKaggle/models/{model_name}/"
         )
@@ -59,7 +59,7 @@ def model_saver_wandb(model, optimizer, epoch, loss, hidden_state_dict,train_sta
             f"C:/Users/Nick/Documents/GitHub/OptiverKaggle/models/{model_name}/{model_name}_{epoch}.pt",
         )
     else:
-        print("created path")
+        # print("created path")
         os.makedirs(
             f"C:/Users/Nick/Documents/GitHub/OptiverKaggle/models/{model_name}/"
         )
