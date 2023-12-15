@@ -337,18 +337,25 @@ class GRUNetV3(nn.Module):
         self.drop_1 = nn.Dropout(dropout)
         self.target_size = target_size
         
-
+        #target
         self.fc0 = nn.Linear(input_size,hidden_size)
         self.fc1 = nn.Linear(hidden_size,fc0_size)        
         self.fc_final = nn.Linear(fc0_size, target_size)
 
-        # self.fc_wap0 = nn.Linear(target_size,64)
-        # self.fc_wap_relu = nn.ReLU()
-        # self.fc_wap1 = nn.Linear(64,1)
-
         self.fc_target0 = nn.Linear(target_size,64)
         self.fc_target_relu = nn.ReLU()
         self.fc_target1 = nn.Linear(64,1)
+
+        #wap 
+        self.wap_fc0 = nn.Linear(input_size,hidden_size)
+        self.wap_fc1 = nn.Linear(hidden_size,fc0_size)        
+        self.wap_fc_final = nn.Linear(fc0_size, target_size)
+
+        self.fc_wap0 = nn.Linear(target_size,64)
+        self.fc_wap_relu = nn.ReLU()
+        self.fc_wap1 = nn.Linear(64,1)
+
+
 
         # self.all_fc0 = nn.Linear(hidden_size*200,512)
         # self.all_fc0 = nn.Linear(hidden_size*200,2048)
@@ -386,7 +393,8 @@ class GRUNetV3(nn.Module):
             x = x.transpose(1,2)
             x = self.batch_norm(x)
             x = x.transpose(1,2)
-            x = self.fc0(x)
+            x_bn = x
+            x = self.fc0(x_bn)
             x = self.relu(x)
 
             # x = self.fc01(x)
@@ -394,33 +402,46 @@ class GRUNetV3(nn.Module):
             
             x_h,hidden = self.gru(x,h.contiguous())
 
-            #single classifier
             x = self.layer_norm(x_h)
             x = self.relu1(x)
-            x = self.drop(x)
-            x = self.fc1(x)
+            x_d = self.drop(x)
+
+            #single target classifier
+            x = self.fc1(x_d)
             x = self.layer_norm2(x)
             x_rl1 = self.relu2(x)
             x = self.drop_1(x_rl1)
-            x_ohe = self.fc_final(x)
+            x_target_ohe = self.fc_final(x)
+
+            #single wap classifier
+            x = self.wap_fc1(x_d)
+            x = self.layer_norm2(x)
+            x_rl1 = self.relu2(x)
+            x = self.drop_1(x_rl1)
+            x_wap_ohe = self.wap_fc_final(x)
 
 
 
 
             #wap regression
-            # x_wap = self.fc_wap0(x_ohe.detach())
-            # x_wap = self.fc_wap_relu(x_wap)
-            # x_wap = self.fc_wap1(x_wap)
-            x_wap = x
+            # x_wap = torch.cat([x_bn.detach(),x_ohe],dim=2).detach()
+            x_wap = x_wap_ohe.detach()
+            x_wap = self.fc_wap0(x_wap)
+            x_wap = self.fc_wap_relu(x_wap)
+            x_wap = self.fc_wap1(x_wap)
+            # x_wap = x
 
             #target regression
-            x_target = self.fc_target0(x_ohe)
+            # print(x_bn.shape,x_ohe.shape)
+            # x_target = torch.cat([x_bn.detach(),x_ohe],dim=2).detach()
+            x_target = x_target_ohe.detach()
+            x_target = self.fc_target0(x_target)
             x_target = self.fc_target_relu(x_target)
             x_target = self.fc_target1(x_target)
 
         
 
-        return x_ohe,x_wap,x_target,hidden,x_rl1,x_h 
+        return x_target_ohe,x_wap_ohe,x_wap,x_target,hidden,x_rl1,x_h 
     
 class GRUNetV4(nn.Module):
 
