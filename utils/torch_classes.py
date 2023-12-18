@@ -5,6 +5,7 @@ from tqdm import tqdm
 from torch.nn.utils.rnn import pack_padded_sequence, pack_sequence, unpack_sequence, unpad_sequence
 import numpy as np
 import gc
+import multiprocessing
 
 class TradingDays():
     def __init__(self) -> None:
@@ -45,12 +46,42 @@ class TradingData():
 
     def add_stocks(self, stock_id):
         self.stocksDict[stock_id] = Stock(stock_id)
+        
+    def process_stock_data(self, stock_id, day, stock_daily_data):
+        self.stocksDict[stock_id].data_daily[day] = torch.stack([torch.tensor(x) for x in stock_daily_data['stats'].to_numpy()]).to('cuda:0')
+        self.stocksDict[stock_id].data_volumes[day] = torch.tensor(stock_daily_data['volume'].to_numpy(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].target_daily[day] = torch.tensor(stock_daily_data['target'].to_numpy(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].wap_daily_ohe[day] = torch.tensor(stock_daily_data['wap_target_OHE'].to_list(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].target_daily_ohe[day] = torch.tensor(stock_daily_data['target_OHE'].to_list(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].bid_price_daily[day] = torch.tensor(stock_daily_data['bid_price_t-60'].to_numpy(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].ask_price_daily[day] = torch.tensor(stock_daily_data['ask_price_t-60'].to_numpy(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].wap_price_daily[day] = torch.tensor(stock_daily_data['wap_price_t-60'].to_numpy(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].actual_wap[day] = torch.tensor(stock_daily_data['wap'].to_numpy(), requires_grad=False, device='cuda:0')
 
-    def add_data(self,data:pd.DataFrame):
-        # data['stats'] = np.split(np.nan_to_num(data[self.stat_cols].to_numpy(),nan=-1),indices_or_sections=len(data))
-        # data['stats'] = pd.Series(data[self.stat_cols].fillna(-1).values.tolist())
-        data_grouped_stock_id = data.groupby('stock_id')
+    def add_data(self, data: pd.DataFrame):
+
+        for stock in data.stock_id.unique():
+            self.stocksDict[stock] = Stock(stock)
+
+        # Create a multiprocessing pool
         data['volume'] = data['ask_size']+data['bid_size']
+        data_grouped_stock_id = data.groupby(['stock_id', 'date_id'], sort=False)
+        # pool = multiprocessing.Pool(processes=4)
+
+        for (stock_id, day), stock_daily_data in tqdm(data_grouped_stock_id):
+            if stock_daily_data['target'].isna().sum():
+                print(f'Missing Targets for {day=}, for {stock_id=}, Excluding')
+                data.drop(stock_daily_data.index, inplace=True)
+                continue
+
+            # Use multiprocessing to process stock data in parallel
+            # pool.apply_async(self.process_stock_data, args=(stock_id, day, stock_daily_data))
+            self.process_stock_data(stock_id, day, stock_daily_data)
+        # Close the multiprocessing pool and wait for all processes to finish
+        # pool.close()
+        # pool.join()
+
+        print("Finished processing stock data")
 
         data_grouped_daily = data.groupby('date_id',sort=False)
 
@@ -65,41 +96,8 @@ class TradingData():
             weights = (data_daily["target_category"].value_counts(sort=False).reset_index().sort_values("target_category"))
             weights["norm_count"] = 1 - (weights["count"] / weights["count"].sum())
             self.target_daily_weights[date_id] = torch.tensor(weights["norm_count"].to_numpy(), device="cuda:0")
-            
-            
-            
-        for stock in data.stock_id.unique():
-            self.stocksDict[stock] = Stock(stock)
-
-        tensor_columns = ['volume','target','wap_target_OHE','target_OHE','bid_price_t-60','ask_price_t-60','wap_price_t-60','wap']
-
-        # for col in tqdm(tensor_columns):
-        #     data[col] = [torch.tensor(x, requires_grad=False) for x in data['volume'].tolist()]
-
-        data_grouped_stock_id = data.groupby(['stock_id','date_id'],sort=False)
-        for (stock_id,day),stock_daily_data in tqdm(data_grouped_stock_id):
-
-            if stock_daily_data['target'].isna().sum():
-                print(f'Missing Targets for {day=},for {stock_id=}, Excluding')
-                data.drop(stock_daily_data.index, inplace=True)
-                continue
-
-            self.stocksDict[stock_id].data_daily[day] =         torch.stack([torch.tensor(x[0]) for x in stock_daily_data['stats'].to_numpy()]).to('cuda:0')
-            self.stocksDict[stock_id].data_volumes[day] =       torch.tensor(stock_daily_data['volume'].to_numpy(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].target_daily[day] =       torch.tensor(stock_daily_data['target'].to_numpy(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].wap_daily_ohe[day] =      torch.tensor(stock_daily_data['wap_target_OHE'].to_list(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].target_daily_ohe[day] =   torch.tensor(stock_daily_data['target_OHE'].to_list(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].bid_price_daily[day] =    torch.tensor(stock_daily_data['bid_price_t-60'].to_numpy(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].ask_price_daily[day] =    torch.tensor(stock_daily_data['ask_price_t-60'].to_numpy(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].wap_price_daily[day] =    torch.tensor(stock_daily_data['wap_price_t-60'].to_numpy(),requires_grad=False,device='cuda:0')
-            self.stocksDict[stock_id].actual_wap[day] =         torch.tensor(stock_daily_data['wap'].to_numpy(),requires_grad=False,device='cuda:0')
-            # print(self.stocksDict[stock_id].actual_wap[day] )
-            # asdf
 
 
-
-
-        gc.collect()
 
     def generate_batches(self, validation_split=0.20):
         len_data = len(self.daysDict)
@@ -219,6 +217,32 @@ class TradingData():
             if stock <5 : 
                 print(stock)
                 print(self.stocksDict[stock].hidden)
+
+    def extract_data(self, i):
+        new_x = self.train_batches[i]
+        Y = self.train_class_batches[i]
+        Y_price_ask = self.train_ask_price_daily[i]
+        Y_price_bid = self.train_bid_price_daily[i]
+        Y_price_wap = self.train_wap_price_daily[i]
+        Y_ohe_wap = self.train_wap_ohe_batches[i]
+        Y_ohe_target = self.train_target_ohe_batches[i]
+
+        # Add your code here
+
+        return new_x, Y, Y_price_ask, Y_price_bid, Y_price_wap, Y_ohe_wap, Y_ohe_target
+    
+    def extract_val_data(self, i):
+        new_x = self.val_batches[i]
+        Y = self.val_class_batches[i]
+        Y_price_ask = self.val_ask_price_daily[i]
+        Y_price_bid = self.val_bid_price_daily[i]
+        Y_price_wap = self.val_wap_price_daily[i]
+        Y_ohe_wap = self.val_wap_ohe_batches[i]
+        Y_ohe_target = self.val_target_ohe_batches[i]
+
+        # Add your code here
+
+        return new_x, Y, Y_price_ask, Y_price_bid, Y_price_wap, Y_ohe_wap, Y_ohe_target
 
 class GRUNet(nn.Module):
 
@@ -354,13 +378,10 @@ class GRUNetV3(nn.Module):
         self.fc_wap0 = nn.Linear(target_size,64)
         self.fc_wap_relu = nn.ReLU()
         self.fc_wap1 = nn.Linear(64,1)
-
-
-
-        # self.all_fc0 = nn.Linear(hidden_size*200,512)
-        # self.all_fc0 = nn.Linear(hidden_size*200,2048)
-        # self.all_fc1 = nn.Linear(2048,1024)
-        # self.all_fc2 = nn.Linear(1024,200*target_size)
+        self.all_fc0 = nn.Linear(hidden_size*200,512)
+        self.all_fc0 = nn.Linear(hidden_size*200,2048)
+        self.all_fc1 = nn.Linear(2048,1024)
+        self.all_fc2 = nn.Linear(1024,200*target_size)
 
 
         #regular
@@ -374,15 +395,15 @@ class GRUNetV3(nn.Module):
         if p2:
             x = x.float().detach().requires_grad_()
             # x = x.transpose(0,1).view(49,-1).shape
-            # x = self.relu(x)
-            # x = self.all_fc0(x)
-            # x = self.relu(x)
-            # x = self.drop(x)
-            # x = self.all_fc1(x)
-            # x = self.relu(x)
-            # x = self.drop(x)
-            # x = self.all_fc2(x)
-            # x = x.view((-1,200,self.target_size))
+            x = self.relu(x)
+            x = self.all_fc0(x)
+            x = self.relu(x)
+            x = self.drop(x)
+            x = self.all_fc1(x)
+            x = self.relu(x)
+            x = self.drop(x)
+            x = self.all_fc2(x)
+            x = x.view((-1,200,self.target_size))
             
             return x
 
@@ -444,25 +465,202 @@ class GRUNetV3(nn.Module):
         return x_target_ohe,x_wap_ohe,x_wap,x_target,hidden,x_rl1,x_h 
     
 class GRUNetV4(nn.Module):
-
     def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1,target_size=7):
         super(GRUNetV4, self).__init__()
+        self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
+        self.relu = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(fc0_size)
+        self.drop = nn.Dropout(dropout)
+
+        self.fc0 = nn.Linear(input_size,hidden_size)
+        self.fc1 = nn.Linear(hidden_size,fc0_size)        
+        self.fc_final = nn.Linear(fc0_size, target_size)
+
+        self.fc_reg0 = nn.Linear(hidden_size,128)
+        self.fc_reg1 = nn.Linear(128,64)
+        self.fc_reg2 = nn.Linear(64,1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        #regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x,h=None, test=False):
+        x = x.float()
+        x = x.transpose(1,2)
+        x = self.batch_norm(x)
+        x = x.transpose(1,2)
+        # x = self.fc0(x)
+        # x = self.relu(x)
+        x_h,hidden = self.gru(x,h.contiguous())
+
+        x = self.layer_norm(x_h)
+        x = self.relu(x)
+        x = self.drop(x)
+        x = self.fc1(x)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe = self.fc_final(x)
+
+        # x_reg = torch.cat([self.softmax(x_ohe.detach()),x_ohe],dim=2)
+        # x_reg = torch.cat([x_h,x_ohe],dim=2)
+        x_reg = x_h
+        x_reg = self.drop(x_reg)
+        # x_reg = x_h
+        x_reg = self.fc_reg0(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.drop(x_reg)
+        x_reg = self.fc_reg1(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg2(x_reg)
+
+        return x_ohe,x_reg,hidden,x_rl1,x_h 
+
+class GRUNetV4(nn.Module):
+    def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1,target_size=7):
+        super(GRUNetV4, self).__init__()
+        self.gru = nn.GRU(input_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
+        self.relu = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(fc0_size)
+        self.drop = nn.Dropout(dropout)
+
+        self.fc0 = nn.Linear(input_size,hidden_size)
+        self.fc1 = nn.Linear(hidden_size,fc0_size)        
+        self.fc_final = nn.Linear(fc0_size, target_size)
+
+        self.fc_reg0 = nn.Linear(hidden_size,128)
+        self.fc_reg1 = nn.Linear(128,64)
+        self.fc_reg2 = nn.Linear(64,1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        #regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x,h=None, test=False):
+        x = x.float()
+        x = x.transpose(1,2)
+        x = self.batch_norm(x)
+        x = x.transpose(1,2)
+        # x = self.fc0(x)
+        # x = self.relu(x)
+        x_h,hidden = self.gru(x,h.contiguous())
+
+        x = self.layer_norm(x_h)
+        x = self.relu(x)
+        x = self.drop(x)
+        x = self.fc1(x)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe = self.fc_final(x)
+
+        # x_reg = torch.cat([self.softmax(x_ohe.detach()),x_ohe],dim=2)
+        # x_reg = torch.cat([x_h,x_ohe],dim=2)
+        # x_reg = x_h
+        # x_reg = self.drop(x_reg)
+        # x_reg = x_h
+        x_reg = self.fc_reg0(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.drop(x_reg)
+        x_reg = self.fc_reg1(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg2(x_reg)
+
+        return x_ohe,x_reg,hidden,x_rl1,x_h 
+
+class GRUNetV4_sweep(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden=None, output='raw', dropout=0.5, fc0_size=256, fc1_size=64, num_layers=1, target_size=7, remove_first_linear=False, detach=0):
+        super(GRUNetV4_sweep, self).__init__()
+        self.gru_input_size = input_size if remove_first_linear else hidden_size
+        self.gru = nn.GRU(self.gru_input_size, hidden_size, num_layers=num_layers, dropout=0.3, batch_first=True)
+        self.relu = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(fc0_size)
+        self.layer_norm3 = nn.LayerNorm(128)
+        self.drop = nn.Dropout(dropout)
+        self.detach = detach   
+
+        if not remove_first_linear:
+            self.fc0 = nn.Linear(input_size, hidden_size)
+        else:
+            self.fc0 = None
+
+        self.fc1 = nn.Linear(hidden_size, fc0_size)
+        self.fc_final = nn.Linear(fc0_size, target_size)
+
+        self.fc_reg0 = nn.Linear(target_size*2, 128)
+        self.fc_reg1 = nn.Linear(128, 64)
+        self.fc_reg2 = nn.Linear(64, 1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        # regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x, h=None, test=False):
+        x = x.float()
+        x = x.transpose(1, 2)
+        x = self.batch_norm(x)
+        x = x.transpose(1, 2)
+
+        if self.fc0 is not None:
+            x = self.fc0(x)
+            x = self.relu(x)
+
+        x_h, hidden = self.gru(x, h.contiguous())
+
+        x = self.layer_norm(x_h)
+        x = self.relu(x)
+        x = self.drop(x)
+        x = self.fc1(x)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe = self.fc_final(x)
+
+        if self.detach == 0:
+            x_reg = torch.cat([self.softmax(x_ohe), x_ohe], dim=2) 
+        elif self.detach == 1:  
+            x_reg = torch.cat([self.softmax(x_ohe.detach()), x_ohe], dim=2)
+        else:
+            x_reg = torch.cat([self.softmax(x_ohe), x_ohe], dim=2).detach()
+        x_reg = self.layer_norm3(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.drop(x_reg)
+        x_reg = self.fc_reg1(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg2(x_reg)
+
+        return x_ohe, x_reg, hidden, x_rl1, x_h
+
+
+
+class GRUNetV4_sub(nn.Module):
+    def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1,target_size=7):
+        super(GRUNetV4_sub, self).__init__()
         self.gru = nn.GRU(hidden_size,hidden_size,num_layers=num_layers, dropout=0.3,batch_first=True)
         self.relu = nn.ReLU()
         self.batch_norm = nn.BatchNorm1d(input_size)
         self.layer_norm = nn.LayerNorm(hidden_size)
         self.layer_norm2 = nn.LayerNorm(fc0_size)
         self.drop = nn.Dropout(dropout)
-        self.drop_1 = nn.Dropout(dropout)
-        
 
         self.fc0 = nn.Linear(input_size,hidden_size)
         self.fc1 = nn.Linear(hidden_size,fc0_size)        
-        self.fc_final = nn.Linear(fc0_size, target_size)
+        self.fc_final = nn.Linear(fc0_size,target_size )
 
-        self.fc_reg0 = nn.Linear(target_size,128)
+        self.fc_reg0 = nn.Linear(target_size*2,128)
         self.fc_reg1 = nn.Linear(128,64)
         self.fc_reg2 = nn.Linear(64,1)
+
+        self.softmax = nn.Softmax(dim=2)
 
         #regular
         self.hidden_size = hidden_size
@@ -482,17 +680,23 @@ class GRUNetV4(nn.Module):
         x = self.fc1(x)
         x = self.layer_norm2(x)
         x_rl1 = self.relu(x)
-        x = self.drop_1(x_rl1)
+        x = self.drop(x_rl1)
         x_ohe = self.fc_final(x)
 
-        x_reg = self.fc_reg0(x_ohe.detach())
+        # x_reg = torch.cat([self.softmax(x_ohe.detach()),x_ohe],dim=2)
+        x_reg = torch.cat([self.softmax(x_ohe),x_ohe],dim=2)
+        # x_reg = x_h
+        x_reg = self.drop(x_reg)
+        # x_reg = x_h
+        x_reg = self.fc_reg0(x_reg)
         x_reg = self.relu(x_reg)
+        x_reg = self.drop(x_reg)
         x_reg = self.fc_reg1(x_reg)
         x_reg = self.relu(x_reg)
         x_reg = self.fc_reg2(x_reg)
 
-        return x_ohe,x_reg,hidden,x_rl1,x_h 
-    
+        return x_ohe,x_reg,hidden,x_rl1,x_h     
+
 class GRUNetV5(nn.Module):
 
     def __init__(self, input_size, hidden_size,hidden=None,output='raw', dropout=0.5, fc0_size=256,fc1_size=64,num_layers=1):

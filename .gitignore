@@ -7,3 +7,4 @@ wandb/
 *.parquet
 *.fth
 *.pqt
+lgbm_models/

@@ -16,6 +16,8 @@ from utils.model_saver import model_saver_wandb as model_saver
 import torch.nn.functional as F
 from collections import defaultdict
 
+from torchviz import make_dot
+
 weights = [
     0.004, 0.001, 0.002, 0.006, 0.004, 0.004, 0.002, 0.006, 0.006, 0.002, 0.002, 0.008,
     0.006, 0.002, 0.008, 0.006, 0.002, 0.006, 0.004, 0.002, 0.004, 0.001, 0.006, 0.004,
@@ -39,6 +41,25 @@ weights = [
 def custom_MSE(x, y):
     return (((x - y) + 1) ** 2).mean()
 
+
+def model_forward_pass(model, new_x, hidden_in):
+    output_wap_ohe, output_wap, hidden, relu, x_h = model(new_x, hidden_in)
+    output_wap_ohe = output_wap_ohe.squeeze()
+    hidden = hidden.transpose(0, 1)
+    output_wap = output_wap.squeeze()
+    return output_wap_ohe, output_wap, hidden, x_h , relu
+
+def calculate_losses(output_ohe, Y_ohe, output, Y, criterion, weight_dif_factor = 0):
+    reg_L1 = nn.L1Loss()
+    weight_dif = (abs(torch.argmax(output_ohe, dim=2) - torch.argmax(Y_ohe, dim=2)) + 1)**weight_dif_factor
+    loss_ohe = (criterion(output_ohe.flatten(end_dim=1), Y_ohe.flatten(end_dim=1)) * weight_dif).mean()
+    L1_loss = reg_L1(output, Y)
+    return loss_ohe, L1_loss
+
+def update_model(optimizer, epoch_loss, loss_count):
+    optimizer.zero_grad()
+    epoch_loss.backward()
+    optimizer.step()
 
 def train_model(
     trading_df: torch_classes.TradingData,
@@ -64,6 +85,19 @@ def train_model(
     optim2 = optim.RMSprop(model.parameters(), lr=config['learning_rate'], weight_decay=0.0001)
     optim3 = optim.RMSprop(model.parameters(), lr=config['learning_rate'], weight_decay=0.0001)
 
+    if 'ohe_loss_weight' in config.keys():
+        ohe_loss_weight = config['ohe_loss_weight']
+        l1_loss_weight = 1-config['ohe_loss_weight']
+        l1_squared = config['l1_squared']
+        ohe_squared = config['ohe_squared']
+        weight_dif  = config['weigh_dif_factor']
+    else:
+        ohe_loss_weight = 1
+        l1_loss_weight = 1
+        l1_squared = 1
+        ohe_squared = 1
+        weight_dif = 1 
+
     
     for epoch in trange(epochs,position=0):
         train_tgt_total_loss,train_wap_total_loss,train_l1_loss_wap,train_l1_loss_target = 0,0,0,0
@@ -86,13 +120,7 @@ def train_model(
 
             example_ct += 1
 
-            new_x = trading_df.train_batches[i]
-            Y = trading_df.train_class_batches[i]
-            Y_price_ask = trading_df.train_ask_price_daily[i]
-            Y_price_bid = trading_df.train_bid_price_daily[i]
-            Y_price_wap = trading_df.train_wap_price_daily[i]
-            Y_ohe_wap = trading_df.train_wap_ohe_batches[i]
-            Y_ohe_target = trading_df.train_target_ohe_batches[i]
+            new_x, Y, Y_price_ask, Y_price_bid, Y_price_wap, Y_ohe_wap, Y_ohe_target = trading_df.extract_data(i)
 
             #silly hack to change from wpa to target
             Y_ohe_wap = Y_ohe_target
@@ -104,65 +132,32 @@ def train_model(
 
             hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0, 1)
 
+            print(new_x.shape)
 
+            output_wap_ohe, output_wap, hidden, x_h , relu = model_forward_pass(model, new_x, hidden_in)
 
-            output_wap_ohe, output_wap, hidden, _, x_h = model(new_x, hidden_in)
-            output_wap_ohe = output_wap_ohe.squeeze()
-
-            hidden = hidden.transpose(0, 1)
-            output_wap = output_wap.squeeze()
-            # output_target = output_target.squeeze()
-
-            # [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks, x_h)]
             [setattr(obj, "hidden", val) for obj, val in zip(stocks, hidden)]
 
-            weight_dif = (
-                abs(torch.argmax(output_wap_ohe, dim=2) - torch.argmax(Y_ohe_wap, dim=2)) + 1
-            )
-
-            
-            loss_wap_ohe = (
-                criterion(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1)) *weight_dif
-            ).mean()
-
-
-            L1_loss_wap = reg_L1(output_wap, Y_price_wap)
-            
+            loss_wap_ohe, L1_loss_wap = calculate_losses(output_wap_ohe, Y_ohe_wap, output_wap, Y_price_wap, criterion, weight_dif_factor=weight_dif)
 
             train_wap_total_loss +=  loss_wap_ohe.item()
             train_l1_loss_wap += L1_loss_wap.item()
-
-            # train_tgt_total_loss +=  loss_tgt_ohe.item()
-            # L1_loss_target = reg_L1(output_target, Y)
-            # train_l1_loss_target += L1_loss_target.item()
-
-            # loss = L1_loss_target + loss_tgt_ohe + loss_wap_ohe + L1_loss_wap
-            loss = L1_loss_wap + loss_wap_ohe
-
+            loss = (l1_loss_weight*L1_loss_wap)**l1_squared + (ohe_loss_weight*loss_wap_ohe)**ohe_squared
 
             if setup_loss:
                 epoch_loss = loss
-                # epoch_reg_l1 = L1_loss
-                # L1_loss_target_epoch = L1_loss_target
-                # loss_all_epoch = loss_all
                 setup_loss = 0
                 loss_count = 1
             else:
-                if loss.isnan():
-                    pass
-
                 epoch_loss = loss + epoch_loss
                 loss_count += 1
-                # epoch_reg_l1 = L1_loss+epoch_reg_l1
-                # L1_loss_target_epoch = L1_loss_target + L1_loss_target_epoch
-                # loss_all_epoch += loss_all
                 if i % mini_batches == 0:
                     if i == 0:
                         pass
                     else:
                         wandb.log({"epoch_loss": epoch_loss / loss_count, 
-                                #    "all_target_loss": loss_all
                                    })
+                        optimizer.zero_grad()
                         epoch_loss.backward()
                         optimizer.step()
                         trading_df.detach_hidden()
@@ -175,10 +170,9 @@ def train_model(
             wandb.log({"epoch_loss": epoch_loss / loss_count, 
                     #    "all_target_loss": loss_all
                        })
-            # epoch_loss.backward()
+            optimizer.zero_grad()
+            epoch_loss.backward()
             optimizer.step()
-            # optim2.step()
-            # optim3.step()
 
         trading_df.detach_hidden()
         wandb.log({"loss_1": torch.mean(loss).item()})
@@ -244,13 +238,7 @@ def validate_model(
 
         Y_actual_wap = trading_df.val_actual_wap[i]
 
-        new_x = trading_df.val_batches[i]
-        Y = trading_df.val_class_batches[i]
-        Y_price_ask = trading_df.val_ask_price_daily[i]
-        Y_price_bid = trading_df.val_bid_price_daily[i]
-        Y_price_wap = trading_df.val_wap_price_daily[i]
-        Y_ohe_wap = trading_df.val_wap_ohe_batches[i]
-        Y_ohe_target = trading_df.val_target_ohe_batches[i]
+        new_x, Y, Y_price_ask, Y_price_bid, Y_price_wap, Y_ohe_wap, Y_ohe_target = trading_df.extract_val_data(i)
 
         #silly hack to change from wpa to target
         Y_ohe_wap = Y_ohe_target
@@ -258,29 +246,17 @@ def validate_model(
 
         hidden_in = torch.stack([x.hidden for x in stocks]).transpose(0, 1).contiguous()
 
-        output_wap_ohe, output_wap, hidden, relu, x_h = model(new_x, hidden_in)
-
-        output_wap_ohe = output_wap_ohe.squeeze()
-        hidden = hidden.transpose(0, 1)
-        output_wap = output_wap.squeeze()
+        output_wap_ohe, output_wap, hidden, x_h , relu = model_forward_pass(model, new_x, hidden_in)
 
         [setattr(obj, "hidden", val.detach()) for obj, val in zip(stocks, hidden)]
         [setattr(obj, 'hidden_out', val) for obj, val in zip(stocks,  x_h)]
 
 
-        loss_wap = reg_L1(output_wap, Y_price_wap)
-        loss_wap_ohe = criterion(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1))
-        loss_list = reg_CEL(output_wap_ohe.flatten(end_dim=1), Y_ohe_wap.flatten(end_dim=1))
+        loss_wap_ohe, loss_wap = calculate_losses(output_wap_ohe, Y_ohe_wap, output_wap, Y_price_wap, criterion)
         _, actual = torch.max(Y_ohe_wap, 2)
         conf, predicted = torch.max(output_wap_ohe, 2)
         correct_wap = predicted == actual
 
-        # loss_target = reg_L1(output_target, Y)
-        # loss_tgt_ohe = criterion(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
-        # loss_list = reg_CEL(output_tgt_ohe.flatten(end_dim=1), Y_ohe_target.flatten(end_dim=1))
-        # _, actual = torch.max(Y_ohe_target, 2)
-        # conf, predicted = torch.max(output_tgt_ohe, 2)
-        # correct_tgt = predicted == actual
 
 
         if i == 0:
