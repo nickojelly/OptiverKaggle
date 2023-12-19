@@ -53,6 +53,8 @@ class TradingData():
         self.stocksDict[stock_id].target_daily[day] = torch.tensor(stock_daily_data['target'].to_numpy(), requires_grad=False, device='cuda:0')
         self.stocksDict[stock_id].wap_daily_ohe[day] = torch.tensor(stock_daily_data['wap_target_OHE'].to_list(), requires_grad=False, device='cuda:0')
         self.stocksDict[stock_id].target_daily_ohe[day] = torch.tensor(stock_daily_data['target_OHE'].to_list(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].target_daily_ohe2[day] = torch.tensor(stock_daily_data['target_OHE2'].to_list(), requires_grad=False, device='cuda:0')
+        self.stocksDict[stock_id].target_daily_ohe3[day] = torch.tensor(stock_daily_data['target_OHE3'].to_list(), requires_grad=False, device='cuda:0')
         self.stocksDict[stock_id].bid_price_daily[day] = torch.tensor(stock_daily_data['bid_price_t-60'].to_numpy(), requires_grad=False, device='cuda:0')
         self.stocksDict[stock_id].ask_price_daily[day] = torch.tensor(stock_daily_data['ask_price_t-60'].to_numpy(), requires_grad=False, device='cuda:0')
         self.stocksDict[stock_id].wap_price_daily[day] = torch.tensor(stock_daily_data['wap_price_t-60'].to_numpy(), requires_grad=False, device='cuda:0')
@@ -74,12 +76,7 @@ class TradingData():
                 data.drop(stock_daily_data.index, inplace=True)
                 continue
 
-            # Use multiprocessing to process stock data in parallel
-            # pool.apply_async(self.process_stock_data, args=(stock_id, day, stock_daily_data))
             self.process_stock_data(stock_id, day, stock_daily_data)
-        # Close the multiprocessing pool and wait for all processes to finish
-        # pool.close()
-        # pool.join()
 
         print("Finished processing stock data")
 
@@ -112,6 +109,8 @@ class TradingData():
         self.train_class_batches = []
         self.train_wap_ohe_batches = []
         self.train_target_ohe_batches = []
+        self.train_target_ohe_batches2 = []
+        self.train_target_ohe_batches3 = []
         self.stock_batches = []
         self.train_bid_size_daily  = []
         self.train_bid_price_daily = []
@@ -127,6 +126,8 @@ class TradingData():
             train_classes = torch.stack([self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             train_wap_ohe = torch.stack([self.stocksDict[x].wap_daily_ohe[i] for x in self.daysDict[i]]).to('cuda:0')
             train_target_ohe = torch.stack([self.stocksDict[x].target_daily_ohe[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_target_ohe2 = torch.stack([self.stocksDict[x].target_daily_ohe2[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_target_ohe3 = torch.stack([self.stocksDict[x].target_daily_ohe3[i] for x in self.daysDict[i]]).to('cuda:0')
 
 
             bid_price_daily = torch.stack([self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
@@ -138,6 +139,8 @@ class TradingData():
             self.train_class_batches.append(train_classes)
             self.train_wap_ohe_batches.append(train_wap_ohe)
             self.train_target_ohe_batches.append(train_target_ohe)
+            self.train_target_ohe_batches2.append(train_target_ohe2)
+            self.train_target_ohe_batches3.append(train_target_ohe3)
             self.train_bid_price_daily.append(bid_price_daily) 
             self.train_ask_price_daily.append(ask_price_daily)
             self.train_wap_price_daily.append(wap_price_daily)  
@@ -146,6 +149,8 @@ class TradingData():
         self.val_class_batches = []
         self.val_wap_ohe_batches = []
         self.val_target_ohe_batches = []
+        self.val_target_ohe_batches2 = []
+        self.val_target_ohe_batches3 = []
         self.val_stock_batches = []
         self.val_bid_size_daily  = []
         self.val_bid_price_daily = []
@@ -159,10 +164,14 @@ class TradingData():
             train_classes = torch.stack([self.stocksDict[x].target_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             train_wap_ohe = torch.stack([self.stocksDict[x].wap_daily_ohe[i] for x in self.daysDict[i]]).to('cuda:0')
             train_target_ohe = torch.stack([self.stocksDict[x].target_daily_ohe[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_target_ohe2 = torch.stack([self.stocksDict[x].target_daily_ohe2[i] for x in self.daysDict[i]]).to('cuda:0')
+            train_target_ohe3 = torch.stack([self.stocksDict[x].target_daily_ohe3[i] for x in self.daysDict[i]]).to('cuda:0')
             self.val_batches.append(train_data)
             self.val_class_batches.append(train_classes)
             self.val_wap_ohe_batches.append(train_wap_ohe)
             self.val_target_ohe_batches.append(train_target_ohe)
+            self.val_target_ohe_batches2.append(train_target_ohe)
+            self.val_target_ohe_batches3.append(train_target_ohe)
 
             bid_price_daily = torch.stack([self.stocksDict[x].bid_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
             ask_price_daily = torch.stack([self.stocksDict[x].ask_price_daily[i] for x in self.daysDict[i]]).to('cuda:0')
@@ -696,6 +705,169 @@ class GRUNetV4_sub(nn.Module):
         x_reg = self.fc_reg2(x_reg)
 
         return x_ohe,x_reg,hidden,x_rl1,x_h     
+
+class GRUNetV5_a(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden=None, output='raw', dropout=0.5, fc0_size=256, fc1_size=64, num_layers=1, target_size=7, remove_first_linear=False, detach=0):
+        super(GRUNetV5_a, self).__init__()
+        self.gru_input_size = input_size if remove_first_linear else hidden_size
+        self.gru = nn.GRU(self.gru_input_size, hidden_size, num_layers=num_layers, dropout=0.3, batch_first=True)
+        self.relu = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(fc0_size)
+        self.layer_norm3 = nn.LayerNorm(128)
+        self.drop = nn.Dropout(dropout)
+        self.detach = detach   
+
+        if not remove_first_linear:
+            self.fc0 = nn.Linear(input_size, hidden_size)
+        else:
+            self.fc0 = None
+
+        self.fc1 = nn.Linear(hidden_size, fc0_size)
+        self.fc_final = nn.Linear(fc0_size, target_size)
+
+        self.fc_reg0 = nn.Linear(target_size*2, 128)
+        self.fc_reg1 = nn.Linear(128, 64)
+        self.fc_reg2 = nn.Linear(64, 1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        # regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x, h=None, test=False):
+        x = x.float()
+        x = x.transpose(1, 2)
+        x = self.batch_norm(x)
+        x = x.transpose(1, 2)
+
+        if self.fc0 is not None:
+            x = self.fc0(x)
+            x = self.relu(x)
+
+        x_h, hidden = self.gru(x, h.contiguous())
+
+        x = self.layer_norm(x_h)
+        x = self.relu(x)
+        x = self.drop(x)
+        x = self.fc1(x)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe = self.fc_final(x)
+
+        return x_ohe, hidden, x_rl1, x_h
+    
+class GRUNetV5_a3(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden=None, output='raw', dropout=0.5, fc0_size=256, fc1_size=64, num_layers=1, target_size=(7,2,15), remove_first_linear=False, detach=0):
+        super(GRUNetV5_a, self).__init__()
+        self.gru_input_size = input_size if remove_first_linear else hidden_size
+        self.gru = nn.GRU(self.gru_input_size, hidden_size, num_layers=num_layers, dropout=0.3, batch_first=True)
+        self.relu = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(fc0_size)
+        self.layer_norm3 = nn.LayerNorm(128)
+        self.drop = nn.Dropout(dropout)
+        self.detach = detach   
+
+        target_size_a = target_size[0]
+        target_size_b = target_size[1]
+        target_size_c = target_size[2]
+
+        if not remove_first_linear:
+            self.fc0 = nn.Linear(input_size, hidden_size)
+        else:
+            self.fc0 = None
+
+        self.fc1a = nn.Linear(hidden_size, fc0_size)
+        self.fc_finala = nn.Linear(fc0_size, target_size_a)
+
+        self.fc1b = nn.Linear(hidden_size, fc0_size)
+        self.fc_finalb = nn.Linear(fc0_size, target_size_b)
+        
+        self.fc1c = nn.Linear(hidden_size, fc0_size)
+        self.fc_finalc = nn.Linear(fc0_size, target_size_c)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        # regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x, h=None, test=False):
+        x = x.float()
+        x = x.transpose(1, 2)
+        x = self.batch_norm(x)
+        x = x.transpose(1, 2)
+
+        if self.fc0 is not None:
+            x = self.fc0(x)
+            x = self.relu(x)
+
+        x_h, hidden = self.gru(x, h.contiguous())
+
+        x = self.layer_norm(x_h)
+        x = self.relu(x)
+        x_d = self.drop(x)
+
+        x = self.fc1a(x_d)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe_a = self.fc_finalb(x)
+
+        x = self.fc1a(x_d)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe_b = self.fc_finalb(x)
+
+        x = self.fc1c(x_d)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe_c = self.fc_finalc(x)
+
+        return (x_ohe_a,x_ohe_b,x_ohe_c), hidden, x_rl1, x_h
+    
+class GRUNetV5_b(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden=None, output='raw', dropout=0.5, fc0_size=256, fc1_size=64, num_layers=1, target_size=7, remove_first_linear=False, detach=0):
+        super(GRUNetV5_b, self).__init__()
+        self.gru_input_size = input_size if remove_first_linear else hidden_size
+        self.relu = nn.ReLU()
+
+        self.layer_norm3 = nn.LayerNorm(128)
+        self.drop = nn.Dropout(dropout)
+        self.detach = detach   
+
+        self.fc_reg0 = nn.Linear(target_size*2, 128)
+        self.fc_reg1 = nn.Linear(128, 64)
+        self.fc_reg2 = nn.Linear(64, 1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        # regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x, h=None, test=False):
+        x_ohe = x.float()
+        if self.detach == 0:
+            x_reg = torch.cat([self.softmax(x_ohe), x_ohe], dim=2) 
+        elif self.detach == 1:  
+            x_reg = torch.cat([self.softmax(x_ohe.detach()), x_ohe], dim=2)
+        else:
+            x_reg = torch.cat([self.softmax(x_ohe), x_ohe], dim=2).detach()
+        x_reg = self.fc_reg0(x_reg)
+        x_reg = self.layer_norm3(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.drop(x_reg)
+        x_reg = self.fc_reg1(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg2(x_reg)
+
+        return x_reg
+
 
 class GRUNetV5(nn.Module):
 

@@ -5,3 +5,6 @@ pyarrow
 openpyxl
 scikit-learn
 wandb
+lightgbm
+torchviz
+polars

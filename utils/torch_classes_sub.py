@@ -634,3 +634,93 @@ class GRUNetV5(nn.Module):
         
 
         return x_ohe,x_wap,hidden,x_rl1,x_h 
+
+class GRUNetV5_a(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden=None, output='raw', dropout=0.5, fc0_size=256, fc1_size=64, num_layers=1, target_size=7, remove_first_linear=False, detach=0):
+        super(GRUNetV5_a, self).__init__()
+        self.gru_input_size = input_size if remove_first_linear else hidden_size
+        self.gru = nn.GRU(self.gru_input_size, hidden_size, num_layers=num_layers, dropout=0.3, batch_first=True)
+        self.relu = nn.ReLU()
+        self.batch_norm = nn.BatchNorm1d(input_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(fc0_size)
+        self.layer_norm3 = nn.LayerNorm(128)
+        self.drop = nn.Dropout(dropout)
+        self.detach = detach   
+
+        if not remove_first_linear:
+            self.fc0 = nn.Linear(input_size, hidden_size)
+        else:
+            self.fc0 = None
+
+        self.fc1 = nn.Linear(hidden_size, fc0_size)
+        self.fc_final = nn.Linear(fc0_size, target_size)
+
+        self.fc_reg0 = nn.Linear(target_size*2, 128)
+        self.fc_reg1 = nn.Linear(128, 64)
+        self.fc_reg2 = nn.Linear(64, 1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        # regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x, h=None, test=False):
+        x = x.float()
+        x = x.transpose(1, 2)
+        x = self.batch_norm(x)
+        x = x.transpose(1, 2)
+
+        if self.fc0 is not None:
+            x = self.fc0(x)
+            x = self.relu(x)
+
+        x_h, hidden = self.gru(x, h.contiguous())
+
+        x = self.layer_norm(x_h)
+        x = self.relu(x)
+        x = self.drop(x)
+        x = self.fc1(x)
+        x = self.layer_norm2(x)
+        x_rl1 = self.relu(x)
+        x = self.drop(x_rl1)
+        x_ohe = self.fc_final(x)
+
+        return x_ohe, hidden, x_rl1, x_h
+    
+class GRUNetV5_b(nn.Module):
+    def __init__(self, input_size, hidden_size, hidden=None, output='raw', dropout=0.5, fc0_size=256, fc1_size=64, num_layers=1, target_size=7, remove_first_linear=False, detach=0):
+        super(GRUNetV5_b, self).__init__()
+        self.gru_input_size = input_size if remove_first_linear else hidden_size
+        self.relu = nn.ReLU()
+
+        self.layer_norm3 = nn.LayerNorm(128)
+        self.drop = nn.Dropout(dropout)
+        self.detach = detach   
+
+        self.fc_reg0 = nn.Linear(target_size*2, 128)
+        self.fc_reg1 = nn.Linear(128, 64)
+        self.fc_reg2 = nn.Linear(64, 1)
+
+        self.softmax = nn.Softmax(dim=2)
+
+        # regular
+        self.hidden_size = hidden_size
+
+    def forward(self, x, h=None, test=False):
+        x_ohe = x.float()
+        if self.detach == 0:
+            x_reg = torch.cat([self.softmax(x_ohe), x_ohe], dim=2) 
+        elif self.detach == 1:  
+            x_reg = torch.cat([self.softmax(x_ohe.detach()), x_ohe], dim=2)
+        else:
+            x_reg = torch.cat([self.softmax(x_ohe), x_ohe], dim=2).detach()
+        x_reg = self.fc_reg0(x_reg)
+        x_reg = self.layer_norm3(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.drop(x_reg)
+        x_reg = self.fc_reg1(x_reg)
+        x_reg = self.relu(x_reg)
+        x_reg = self.fc_reg2(x_reg)
+
+        return x_reg

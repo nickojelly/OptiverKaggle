@@ -223,7 +223,8 @@ stat_cols = [
     "bid_price_prev_move",
     "ask_price_prev_move",
     "pca_prices",
-    "lgbm_preds",
+    "lgbm_preds_target",
+    "lgbm_preds_wap",
 ]
 
 
@@ -318,7 +319,8 @@ stat_col_full = [
     "near_price_bid_price_wap_imb2",
     "ask_price_bid_price_wap_imb2",
     "pca_prices",
-    "lgbm_preds",
+    "lgbm_preds_target",
+    "lgbm_preds_wap",
 ]
 
 lgbm_columns = ['stock_id',
